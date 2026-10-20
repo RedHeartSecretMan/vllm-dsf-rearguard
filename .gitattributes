@@ -1,0 +1,3 @@
+/vendor/** -text
+/patches/** -text
+/tests/official_encoding/** -text

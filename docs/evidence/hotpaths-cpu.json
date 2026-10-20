@@ -1,0 +1,243 @@
+{
+  "status": "PASS",
+  "torch": "2.6.0+cu124",
+  "cuda_available": false,
+  "gpu_validation": "NOT_RUN",
+  "native_loader": {
+    "status": "NOT_RUN"
+  },
+  "scope": "Actual metadata prefixes and projection/control methods with CPU tensors; pack uses an independent CPU reference.",
+  "manifest_sha256": "2b9b4f3e0eea4b39ea450960de9d26b78d7d077648daa2cc05c84ae314b63268",
+  "cases": [
+    {
+      "kind": "indexer-prefix",
+      "ratio": 1,
+      "prefill": false,
+      "old_divisions": 0,
+      "new_divisions": 0
+    },
+    {
+      "kind": "indexer-prefix",
+      "ratio": 1,
+      "prefill": true,
+      "old_divisions": 0,
+      "new_divisions": 0
+    },
+    {
+      "kind": "indexer-prefix",
+      "ratio": 2,
+      "prefill": false,
+      "old_divisions": 1,
+      "new_divisions": 0
+    },
+    {
+      "kind": "indexer-prefix",
+      "ratio": 2,
+      "prefill": true,
+      "old_divisions": 1,
+      "new_divisions": 1
+    },
+    {
+      "kind": "indexer-prefix",
+      "ratio": 4,
+      "prefill": false,
+      "old_divisions": 1,
+      "new_divisions": 0
+    },
+    {
+      "kind": "indexer-prefix",
+      "ratio": 4,
+      "prefill": true,
+      "old_divisions": 1,
+      "new_divisions": 1
+    },
+    {
+      "kind": "swa-prefix",
+      "size": 0,
+      "old_copies": 1,
+      "new_copies": 0
+    },
+    {
+      "kind": "swa-prefix",
+      "size": 1,
+      "old_copies": 1,
+      "new_copies": 0
+    },
+    {
+      "kind": "swa-prefix",
+      "size": 6,
+      "old_copies": 1,
+      "new_copies": 0
+    },
+    {
+      "kind": "swa-prefix",
+      "size": 33,
+      "old_copies": 1,
+      "new_copies": 0
+    },
+    {
+      "kind": "swa-prefix",
+      "size": 192,
+      "old_copies": 1,
+      "new_copies": 0
+    },
+    {
+      "kind": "reuse",
+      "ratio": 1,
+      "step": 0,
+      "layers": 5,
+      "packs": 1
+    },
+    {
+      "kind": "reuse",
+      "ratio": 1,
+      "step": 1,
+      "layers": 5,
+      "packs": 1
+    },
+    {
+      "kind": "reuse",
+      "ratio": 1,
+      "step": 2,
+      "layers": 5,
+      "packs": 1
+    },
+    {
+      "kind": "reuse",
+      "ratio": 2,
+      "step": 0,
+      "layers": 5,
+      "packs": 1
+    },
+    {
+      "kind": "reuse",
+      "ratio": 2,
+      "step": 1,
+      "layers": 5,
+      "packs": 1
+    },
+    {
+      "kind": "reuse",
+      "ratio": 2,
+      "step": 2,
+      "layers": 5,
+      "packs": 1
+    },
+    {
+      "kind": "empty-ragged-pack",
+      "status": "PASS"
+    },
+    {
+      "kind": "context-projection",
+      "rows": 0,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 0,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 1,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 1,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 5,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 5,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 6,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 6,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 31,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 31,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 32,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 32,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 64,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 64,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 129,
+      "profiling": true,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    },
+    {
+      "kind": "context-projection",
+      "rows": 129,
+      "profiling": false,
+      "old_linear_calls": 3,
+      "new_linear_calls": 1
+    }
+  ]
+}

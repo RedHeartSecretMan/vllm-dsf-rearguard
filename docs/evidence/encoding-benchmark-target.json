@@ -1,0 +1,136 @@
+{
+  "status": "PASS",
+  "scope": "Python prompt encoding only; no tokenization, model, GPU or serving throughput measurement",
+  "python": "3.10.12 (main, Feb  4 2025, 14:57:36) [GCC 11.4.0]",
+  "platform": "Linux-5.15.0-142-generic-x86_64-with-glibc2.35",
+  "baseline_sha256": "7f9b5ce8328fa2555b5313009db4d46506cd84ae9a03fb252ab7939a611ca728",
+  "candidate_sha256": "66bd922e7d5a3e3ee38b3c93fa89f732a28429c5f20ae756df18b9d2e57424d7",
+  "cases": [
+    {
+      "tool_turns": 64,
+      "messages": 130,
+      "mode": "chat",
+      "encoded_chars": 16691,
+      "output_sha256": "389810c03dbc42a5a8f3ed830db408697c8739eb720e4ee1bd176c9712df9398",
+      "baseline_ms": [
+        7.115172,
+        7.054792,
+        7.129622
+      ],
+      "candidate_ms": [
+        1.905398,
+        1.87613,
+        1.868644
+      ],
+      "baseline_median_ms": 7.115172,
+      "candidate_median_ms": 1.87613,
+      "cpu_encoding_speedup": 3.7924728030573576,
+      "exact_official_match": true
+    },
+    {
+      "tool_turns": 64,
+      "messages": 130,
+      "mode": "thinking",
+      "encoded_chars": 18243,
+      "output_sha256": "95181306134279496ce78f5705fd4e178206f05029e987c12106d402598bcc4d",
+      "baseline_ms": [
+        7.102287,
+        7.13898,
+        7.086305
+      ],
+      "candidate_ms": [
+        1.9216,
+        1.922833,
+        1.910768
+      ],
+      "baseline_median_ms": 7.102287,
+      "candidate_median_ms": 1.9216,
+      "cpu_encoding_speedup": 3.6960277893422147,
+      "exact_official_match": true
+    },
+    {
+      "tool_turns": 256,
+      "messages": 514,
+      "mode": "chat",
+      "encoded_chars": 63851,
+      "output_sha256": "1c32da7ae857e248d371a42dd994848c8ef6b792a089b2615f27c58605e0920d",
+      "baseline_ms": [
+        88.970051,
+        87.737775,
+        87.919287
+      ],
+      "candidate_ms": [
+        7.532534,
+        7.332916,
+        7.252797
+      ],
+      "baseline_median_ms": 87.919287,
+      "candidate_median_ms": 7.332916,
+      "cpu_encoding_speedup": 11.989676003379829,
+      "exact_official_match": true
+    },
+    {
+      "tool_turns": 256,
+      "messages": 514,
+      "mode": "thinking",
+      "encoded_chars": 69975,
+      "output_sha256": "3dd01c2db96067b7ebf5add44dc6310bac2dbea9edb566bad25791d7cf067215",
+      "baseline_ms": [
+        87.642305,
+        87.60448,
+        87.585442
+      ],
+      "candidate_ms": [
+        7.330051,
+        7.311604,
+        7.300342
+      ],
+      "baseline_median_ms": 87.60448,
+      "candidate_median_ms": 7.311604,
+      "cpu_encoding_speedup": 11.98156792955417,
+      "exact_official_match": true
+    },
+    {
+      "tool_turns": 1024,
+      "messages": 2050,
+      "mode": "chat",
+      "encoded_chars": 253262,
+      "output_sha256": "570f0a3464be1fe5af13574514de580773f500f7732ddf02023b5b941022048d",
+      "baseline_ms": [
+        1337.602723,
+        1341.59447,
+        1343.39116
+      ],
+      "candidate_ms": [
+        28.956729,
+        28.453396,
+        28.308987
+      ],
+      "baseline_median_ms": 1341.59447,
+      "candidate_median_ms": 28.453396,
+      "cpu_encoding_speedup": 47.15059214724316,
+      "exact_official_match": true
+    },
+    {
+      "tool_turns": 1024,
+      "messages": 2050,
+      "mode": "thinking",
+      "encoded_chars": 277842,
+      "output_sha256": "d733907ff4eb2135901dc20dd87ac22295d99469e4325616af9a5ebe42651a4d",
+      "baseline_ms": [
+        1357.61361,
+        1345.045568,
+        1347.608647
+      ],
+      "candidate_ms": [
+        29.643146,
+        29.35908,
+        29.6248
+      ],
+      "baseline_median_ms": 1347.608647,
+      "candidate_median_ms": 29.6248,
+      "cpu_encoding_speedup": 45.48920657692204,
+      "exact_official_match": true
+    }
+  ]
+}
