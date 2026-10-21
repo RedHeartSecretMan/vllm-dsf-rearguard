@@ -17,7 +17,7 @@
 | 1017 完整权重校验 | PASS | 48/48 分片完整 SHA256 通过，revision `f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad` |
 | SM80 数值 / Graph / `ep8` | PASS | TP8 Graph capture、TP4DP2/EP8 启动和 smoke 通过；尚未完成题级精度回归 |
 | 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图、260K prompt 和 1,000,016 prompt 单请求均通过；多请求长文 soak 尚未完成 |
-| 同负载 A/B 与精度回归 | PARTIAL | 已完成 C64/C128/C256 短请求矩阵、1M workspace A/B、实验开关组合 A/B 和 prefill 矩阵；自然任务质量和多请求长文对照仍未完成 |
+| 同负载 A/B 与精度回归 | PARTIAL | 已完成 C64/C128/C256 短请求矩阵、1M workspace A/B、实验开关组合 A/B、prefill 矩阵和四个长尾场景；自然任务质量和更长业务 soak 仍未完成 |
 
 当前 262K 推荐验收配置为 `tp4dp2 / ep8 + DSpark k5 + stacked-kv + max-seqs=256`；1M 高并发 profile 追加 `--experimental bounded-prefill`，并保留 OMP 8、EPLB 和 SM80 custom AG/RS。
 

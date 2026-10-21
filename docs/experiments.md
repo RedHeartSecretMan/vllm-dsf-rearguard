@@ -80,6 +80,8 @@
 
 [DeepInfer](https://github.com/deepseek-ai/DeepInfer) 当前公开 benchmark 将 prefill 测在 4 张 SM100、decode 测在 64 张 SM100，并使用独立的 EP/DP scale-up 配置。它适合作为 DeepSeek V4.1 Flash 的 infra 设计和指标口径参考，不能把其中的 token/s 直接换算成 8×A100 的成绩。
 
+基于当前矩阵的差距分析和下一轮验收顺序见 [DeepInfer 对标与下一轮优化](deepinfer-gap-analysis.md)。
+
 本项目的结果固定在 8×A100-SXM4-80GB / NVSwitch、TP4DP2/EP8、真实 1017 权重和本地 vLLM 适配层上；短请求矩阵使用服务端 completion tokens，prefill 使用首 token 延迟近似值，decode 同时报告单请求 TPOT 和整机并发吞吐。
 
 ## 1M 上限严格对照
@@ -140,3 +142,18 @@ runner 为每个请求记录 TTFT、TPOT、ITL、输入/输出 token 数；summa
 | nature | 16384 | 23241 | 1418 | 63.44 / 145.28 s | 110.7 ms | 205.8 ms |
 
 单流 1,047,000 token 补测通过：random prefill 约 4501 TPS、TTFT 约 228.96 s，逐请求 decode 约 274.7 TPS；nature prefill 约 4757 TPS、TTFT 约 216.49 s，逐请求 decode 约 277.9 TPS。完整逐请求 JSON 和 bidevs/runner 日志保留在目标机 `runtime/benchmark-matrix-20261021` 与临时 bidevs workspace。
+
+## 四个长尾场景（2026-10-21）
+
+四个场景固化在 [`config/benchmarks/scenarios.json`](../config/benchmarks/scenarios.json)，使用当前 1M bounded profile 执行；除 mixed 场景的两条流外，OSL 统一为 1,000。
+
+| Case | 输入与并发 | 请求数 / 时长 | 结果摘要 |
+|---|---|---:|---|
+| `tool_history_16384_c16` | 工具历史目标 ISL 16,384，观测 ISL 15,601，C16，OSL 1,000 | 16 | 0 失败；TTFT P50/P95 1.84 / 1.89 s；TPOT P50 13.31 ms；decode aggregate 约 816 TPS |
+| `vision_mix_4096_c4` | 1/2/4 图像混合，观测 ISL 4,062–4,125，C4，OSL 1,000 | 4 | 0 失败；TTFT P50/P95 1.12 / 1.16 s；TPOT P50 5.59 ms；decode aggregate 约 158 TPS |
+| `long_soak_1024_c64` | ISL 1,024，C64，OSL 1,000 | 1,800 s | 7,940 / 7,940 成功；TTFT P50/P95 0.350 / 0.765 s；TPOT P50/P95 13.17 / 16.85 ms；prefill/decode aggregate 约 4517 / 4411 TPS |
+| `mixed_prefill_decode_same_service` | decode：ISL 1,024/C64/OSL 1,000；prefill：ISL 262,144/C1/OSL 1,000，每 20 s 注入 | 300 s | decode 741 成功；TTFT P50/P95 0.636 / 2.060 s；TPOT P50/P95 19.99 / 48.45 ms；prefill 12 成功，TTFT P50/P95 0.634 / 33.24 s，prefill aggregate 约 10183 TPS |
+
+`mixed_prefill_decode_same_service` 使用同一个 vLLM endpoint、同一个 scheduler、同一个 KV pool，不是 PD 分离服务。完整逐请求证据保留在目标机 `runtime/benchmark-scenarios-20261021`。
+
+表中数值是已完成的原始回执；随后 runner 增加了输入长度校验、独立冷 prompt、future drain 和 mixed lane 计数。下一轮复跑应使用新 runner，不能把两种口径的结果直接合并排序。
