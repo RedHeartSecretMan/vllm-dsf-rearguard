@@ -45,13 +45,13 @@ python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 \
   --experimental stacked-kv
 ```
 
-目标机 Python 3.10 使用 PyTorch 2.6.0+cu124，运行时显式隐藏 GPU；
-固定镜像可用后，正式容器回归仍使用 `runc` 和无网络配置。**34 个张量/控制流场景通过**；
+固定镜像准备前，目标机 Python 3.10 使用 PyTorch 2.6.0+cu124，运行时显式隐藏 GPU；
+该回执只代表宿主 CPU 控制路径，正式固定镜像构建阶段使用 `runc` 和无网络配置，**34 个张量/控制流场景通过**；
 [回执](evidence/hotpaths-cpu.json) 中 `native_loader=NOT_RUN`、`gpu_validation=NOT_RUN`。
 测试执行实际候选方法；ragged pack 数学使用独立 CPU 参考，不代表 Triton kernel
 或 CUDA Graph replay 通过。小型 FP32 投影对照不能代替原生 MXFP8/Marlin 数值验证。
-目标机现有旧 vLLM 环境缺少 `ModelOptLinearMethod`，因此显式 `--native-loader`
-检查被依赖版本拒绝；该失败不计入 PASS，固定 digest 镜像就绪后再验收。
+固定镜像准备前的宿主环境缺少 `ModelOptLinearMethod`，因此显式 `--native-loader`
+检查被旧依赖版本拒绝；该历史失败不计入最终结果，固定 digest 构建阶段的 native loader 已通过。
 
 固定镜像的构建新增原生 MXFP8 权重/scale shard 检查，并拒绝缺失 shard。
 现有旧镜像没有该版 `ModelOptLinearMethod`，因此没有用旧接口冒充固定运行时验收。
