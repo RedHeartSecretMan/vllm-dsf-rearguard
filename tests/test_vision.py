@@ -4,9 +4,11 @@ import ast
 import hashlib
 import json
 import math
+import os
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTATION = ROOT / "adaptation"
@@ -137,6 +139,7 @@ class IndexerWorkspaceTests(unittest.TestCase):
             FILES / "vllm/models/deepseek_v4_1/attention.py",
             ("_indexer_prefill_buffer_size",),
             {
+                "os": os,
                 "envs": SimpleNamespace(VLLM_SPARSE_INDEXER_MAX_LOGITS_MB=logits_mb),
                 "get_max_prefill_buffer_size": lambda config: cap,
             },
@@ -165,6 +168,25 @@ class IndexerWorkspaceTests(unittest.TestCase):
                     requests == 1 or requests * total <= 1024**2 // 4
                 ):
                     self.assertLessEqual(total, size)
+
+    def test_bounded_profile_keeps_one_request_floor(self):
+        path = FILES / "vllm/models/deepseek_v4_1/attention.py"
+        namespace = {
+            "os": os,
+            "envs": SimpleNamespace(VLLM_SPARSE_INDEXER_MAX_LOGITS_MB=512),
+            "get_max_prefill_buffer_size": lambda config: 40 * config.model_config.max_model_len,
+        }
+        result = functions(path, ("_indexer_prefill_buffer_size",), namespace)
+        with patch.dict(
+            os.environ, {"VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE": "1"}
+        ):
+            self.assertEqual(
+                result["_indexer_prefill_buffer_size"](
+                    SimpleNamespace(model_config=SimpleNamespace(max_model_len=1048576)),
+                    2,
+                ),
+                524288,
+            )
 
 
 if __name__ == "__main__":

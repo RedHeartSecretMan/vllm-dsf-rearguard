@@ -16,6 +16,7 @@ EXPERIMENTS = {
     "decode-metadata": "VLLM_DSV41_DECODE_METADATA_FASTPATH",
     "ragged-reuse": "VLLM_DSV41_REUSE_TOPK_RAGGED",
     "stacked-kv": "VLLM_DSV41_STACKED_DRAFT_KV",
+    "bounded-prefill": "VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE",
 }
 
 

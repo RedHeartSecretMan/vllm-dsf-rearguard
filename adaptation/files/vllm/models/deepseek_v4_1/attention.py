@@ -5,6 +5,7 @@ DeepseekV4 MLA Attention Layer
 """
 
 import math
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import cached_property
@@ -111,10 +112,18 @@ def _indexer_prefill_buffer_size(vllm_config: VllmConfig, compress_ratio: int) -
     max_logits_elems = envs.VLLM_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024 // 4
     if max_len < 1 or max_logits_elems < 1:
         raise ValueError("Indexer context and logits budgets must be positive")
-    return min(
+    default_size = min(
         get_max_prefill_buffer_size(vllm_config),
         max(max_len, math.isqrt(max_logits_elems * max_len)),
     )
+    # A 1M model limit otherwise reserves the multi-request upper bound even
+    # when the workload is decode-heavy.  That reservation competes with the
+    # KV pool and can lower concurrent decode throughput.  The bounded profile
+    # keeps enough rows for one request at the full configured context; the
+    # metadata builder still splits larger batches into additional chunks.
+    if os.environ.get("VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE") == "1":
+        return max_len
+    return default_size
 
 
 @triton.jit

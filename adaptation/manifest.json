@@ -87,7 +87,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/attention.py",
       "base_sha256": "991af78c9eda16a0f829ecba57397b2a434335dfecbbd93fff1dc40cbbb92698",
-      "patched_sha256": "1dcbfc69f3d80a742038cc305cc829e4c2eed5cc7a6c53d77e3b45eb039c4228",
+      "patched_sha256": "e2e7f4adb5fdba7b075c97962c4ed2aeac0b8ddc906fb41a7ef77b8f7a951a49",
       "stage": "model_support"
     },
     {
