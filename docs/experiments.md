@@ -115,3 +115,28 @@ bounded 在当前统一脚本口径下将同 seed 的 C256 提升约 23%，并�
 当前结论是：1M 高并发应使用 bounded workspace、OMP 8、EPLB 和 SM80 custom AG/RS。历史 4240 token/s 与本轮固定 prompt 热 C256 约 4338 token/s 同属服务层固定 prompt 口径；随机冷 prompt 结果单独用于评估 KV 规划，不混入该矩阵。
 
 最后将 `decode-metadata` 与 `ragged-reuse` 同时开启做组合 A/B。功能 smoke 和 256 请求均通过，但热 C256 约 3969 token/s，低于基线约 4338 token/s；两者继续保持显式开关关闭，不进入推荐 profile。
+
+## ISL / OSL 矩阵（2026-10-21）
+
+当前最佳 1M bounded profile 使用项目内 `scripts/benchmark_matrix.py` 完成了完整矩阵。所有请求 `OSL=1000`、temperature 0、`ignore_eos=true`，服务端返回 usage 且成功请求计数完整。`nature` 数据由固定自然语言语料经目标 tokenizer 生成 token 序列，`random` 使用普通 token ID 随机序列；两种数据都保持目标 ISL 精确。
+
+- 单流：`ISL=4096/16384/65536/262144/1047000`，并发 1。
+- 并发：`ISL=256/1024/4096/16384`，并发 `4/16/64/256`。
+- 1,048,576 token 输入加上 1,000 token 输出超过 1,048,576 上限，因此用 `ISL=1047000 + OSL=1000` 表示可执行的 1M 输入变体。
+
+runner 为每个请求记录 TTFT、TPOT、ITL、输入/输出 token 数；summary 中的 `prefill_tps` 是总输入 token / 测量墙钟，`decode_tps` 是总 completion token / 测量墙钟，逐请求纯 decode TPS 保存在 `requests[].decode_tps`。ITL 是 SSE inter-event 间隔，TPOT 使用服务端 completion token 数，二者保留各自口径。
+
+当前矩阵的代表性 C256 结果（summary aggregate TPS；TTFT 为 P50/P95）如下：
+
+| 数据 | ISL | prefill TPS | decode TPS | TTFT P50 / P95 | TPOT P50 | ITL P50 |
+|---|---:|---:|---:|---:|---:|---:|
+| random | 256 | 1288 | 5033 | 2.11 / 3.42 s | 35.6 ms | 199.6 ms |
+| nature | 256 | 1612 | 6296 | 2.22 / 3.58 s | 34.7 ms | 202.1 ms |
+| random | 1024 | 4669 | 4560 | 6.24 / 11.63 s | 42.0 ms | 212.4 ms |
+| nature | 1024 | 5177 | 5056 | 6.44 / 11.47 s | 40.4 ms | 200.6 ms |
+| random | 4096 | 13256 | 3236 | 20.71 / 44.56 s | 56.7 ms | 201.6 ms |
+| nature | 4096 | 14540 | 3550 | 15.91 / 36.23 s | 50.5 ms | 198.2 ms |
+| random | 16384 | 19415 | 1185 | 77.89 / 180.63 s | 132.3 ms | 209.3 ms |
+| nature | 16384 | 23241 | 1418 | 63.44 / 145.28 s | 110.7 ms | 205.8 ms |
+
+单流 1,047,000 token 补测通过：random prefill 约 4501 TPS、TTFT 约 228.96 s，逐请求 decode 约 274.7 TPS；nature prefill 约 4757 TPS、TTFT 约 216.49 s，逐请求 decode 约 277.9 TPS。完整逐请求 JSON 和 bidevs/runner 日志保留在目标机 `runtime/benchmark-matrix-20261021` 与临时 bidevs workspace。
