@@ -139,3 +139,5 @@ Prefill 数字包含调度、队列和首 token 开销，是服务层近似值�
 同一固定镜像、TP4DP2/EP8、DSpark k5、stacked-kv、CUDA Graph、全局 C256 的 benchmark 结果（1K 输入、128 输出、冷缓存）为：unbounded C128 / C256 约 843 / 1109 token/s；bounded C128 / C256 约 1286 / 1369 token/s，C256 使用相同 seed 8080，均 0 失败。bounded 单请求 260K prefill 约 9067 token/s，约 1M prefill 约 4772 token/s，均通过；1K 单请求 128 输出的流式 decode 约 158 token/s。该候选将同 seed 的 C256 提升约 23%，但仍保持显式开关，不覆盖 262K 默认配置。
 
 固定 prompt 热矩阵随后完成了 C256 深度调优：当前 OMP 8 + EPLB + custom AG/RS 为约 4338 token/s；关闭 EPLB、关闭 custom AG/RS、OMP 1 分别降至约 4147、3815、2753 token/s。将 GPU memory utilization 提到 0.95 虽使 KV cache 增至约 14.61 GiB，随机冷 C256 反而降至约 1057 token/s，因此未采用。当前 1M 高并发服务保持 OMP 8、EPLB、custom AG/RS、bounded workspace 和 0.90 显存预算。
+
+组合开启 `decode-metadata` 与 `ragged-reuse` 后，C256 热吞吐约 3969 token/s，低于基线约 4338 token/s；功能通过但没有性能收益，继续保持关闭。

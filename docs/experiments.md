@@ -113,3 +113,5 @@ bounded 在当前统一脚本口径下将同 seed 的 C256 提升约 23%，并�
 另测 `gpu-memory-utilization=0.95`：KV cache 从约 10.65 GiB 增至约 14.61 GiB，但随机冷 C256 约 1057 token/s，低于 0.90 profile 的约 1369 token/s；显存增加没有转化为吞吐，继续使用 0.90。
 
 当前结论是：1M 高并发应使用 bounded workspace、OMP 8、EPLB 和 SM80 custom AG/RS。历史 4240 token/s 与本轮固定 prompt 热 C256 约 4338 token/s 同属服务层固定 prompt 口径；随机冷 prompt 结果单独用于评估 KV 规划，不混入该矩阵。
+
+最后将 `decode-metadata` 与 `ragged-reuse` 同时开启做组合 A/B。功能 smoke 和 256 请求均通过，但热 C256 约 3969 token/s，低于基线约 4338 token/s；两者继续保持显式开关关闭，不进入推荐 profile。
