@@ -120,3 +120,14 @@ Prefill 数字包含调度、队列和首 token 开销，是服务层近似值�
 | 260016 | 30.597 s | 约 8498 token/s |
 
 260K prompt 接近当前 262144 context 上限；另一个专用 1M 配置已通过 1,000,016 prompt 单请求，首 token 延迟约 223.7 s、prefill 近似约 4470 token/s。多请求长文 soak、长时间稳定性和自然任务质量回归仍需单独完成。
+
+## 1M context 严格 A/B（同配置）
+
+保持 TP4DP2/EP8、DSpark k5、stacked-kv、CUDA Graph、全局 `max-seqs=256`、chunk 和显存比例不变，只切换 `context=262144/1048576`。同一约 260K prompt 的结果：
+
+| context | 260K prefill 近似吞吐 | 单请求 decode | C256 整机吞吐 |
+|---:|---:|---:|---:|
+| 262144 | 约 8498 token/s | 约 279.5 token/s | 约 7270 token/s |
+| 1048576 | 约 7740 token/s | 约 279.3 token/s | 约 4240 token/s |
+
+结论：1M 上限不会明显改变单请求 decode，但会让同一 260K 输入的 prefill 约下降 9%，并使高并发 C256 吞吐下降约 42%。原因来自更大的 KV/cache 规划、调度和 Graph 工作区，而不是单纯的 decode kernel 速度。

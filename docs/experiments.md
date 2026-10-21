@@ -81,3 +81,7 @@
 [DeepInfer](https://github.com/deepseek-ai/DeepInfer) 当前公开 benchmark 将 prefill 测在 4 张 SM100、decode 测在 64 张 SM100，并使用独立的 EP/DP scale-up 配置。它适合作为 DeepSeek V4.1 Flash 的 infra 设计和指标口径参考，不能把其中的 token/s 直接换算成 8×A100 的成绩。
 
 本项目的结果固定在 8×A100-SXM4-80GB / NVSwitch、TP4DP2/EP8、真实 1017 权重和本地 vLLM 适配层上；短请求矩阵使用服务端 completion tokens，prefill 使用首 token 延迟近似值，decode 同时报告单请求 TPOT 和整机并发吞吐。
+
+## 1M 上限严格对照
+
+在完全相同的 TP4DP2/EP8、DSpark k5、stacked-kv、CUDA Graph、global `max-seqs=256` 配置下，只切换 `context=262144/1048576`：260K prefill 近似吞吐为约 8498 / 7740 token/s，单请求 decode 约 279.5 / 279.3 token/s，C256 整机吞吐约 7270 / 4240 token/s。1M 适合容量请求，262K 更适合作为当前高并发默认值。
