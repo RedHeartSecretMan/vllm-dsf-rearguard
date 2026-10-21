@@ -172,7 +172,7 @@ def main():
     )
     p.add_argument("--output-tokens", type=int, default=1024)
     p.add_argument(
-        "--concurrency", type=int, choices=(1, 8, 32, 64, 128), required=True
+        "--concurrency", type=int, choices=(1, 8, 32, 64, 128, 256), required=True
     )
     p.add_argument("--requests", type=int, help="Defaults to 2x concurrency, minimum 8")
     p.add_argument("--cache", choices=("cold", "warm"), required=True)
