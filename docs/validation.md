@@ -19,7 +19,7 @@
 | 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图、260K prompt 和 1,000,016 prompt 单请求均通过；多请求长文 soak 尚未完成 |
 | 同负载 A/B 与精度回归 | PARTIAL | 已完成 C64/C128/C256 短请求矩阵、1M workspace A/B 和 prefill 矩阵；自然任务质量和多请求长文对照仍未完成 |
 
-当前 262K 推荐验收配置为 `tp4dp2 / ep8 + DSpark k5 + stacked-kv + max-seqs=256`；1M 高并发 profile 追加 `--experimental bounded-prefill`。
+当前 262K 推荐验收配置为 `tp4dp2 / ep8 + DSpark k5 + stacked-kv + max-seqs=256`；1M 高并发 profile 追加 `--experimental bounded-prefill`，并保留 OMP 8、EPLB 和 SM80 custom AG/RS。
 
 目标机默认 `python3` 指向 3.6，最初的目标机 CPU 检查因此失败；
 改用已安装的 `/usr/bin/python3` 3.10 后完成回归。另修复宿主已有同名 `scripts`

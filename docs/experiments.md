@@ -98,3 +98,18 @@
 | 1M bounded | 约 1286 | 约 1369 | 约 9067 | 约 4772 |
 
 bounded 在当前统一脚本口径下将同 seed 的 C256 提升约 23%，并保持 1M 单请求通过；它适合作为 1M 高并发 profile。旧的短矩阵使用另一套客户端计时口径，不能与本表直接合并排序。
+
+## C256 深度调优 A/B
+
+为复现历史短矩阵，使用固定 10-token prompt，先跑 C128 热身，再测 C256；每个请求输出 128 token，Graph、EPLB、DSpark k5、stacked-kv 和 bounded workspace 保持不变。
+
+| 变体 | C128 token/s | C256 token/s | 结论 |
+|---|---:|---:|---|
+| OMP 8 + EPLB + custom AG/RS | 约 3016 | 约 4338 | 当前推荐组合 |
+| 关闭 EPLB | 约 2952 | 约 4147 | 下降约 4.4%，保留 EPLB |
+| 关闭 custom AG/RS | 约 2335 | 约 3815 | 下降约 12%，保留 custom AG/RS |
+| OMP 1 | 约 2493 | 约 2753 | 下降约 36.5%，保留 OMP 8 |
+
+另测 `gpu-memory-utilization=0.95`：KV cache 从约 10.65 GiB 增至约 14.61 GiB，但随机冷 C256 约 1057 token/s，低于 0.90 profile 的约 1369 token/s；显存增加没有转化为吞吐，继续使用 0.90。
+
+当前结论是：1M 高并发应使用 bounded workspace、OMP 8、EPLB 和 SM80 custom AG/RS。历史 4240 token/s 与本轮固定 prompt 热 C256 约 4338 token/s 同属服务层固定 prompt 口径；随机冷 prompt 结果单独用于评估 KV 规划，不混入该矩阵。
