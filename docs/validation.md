@@ -16,8 +16,8 @@
 | 目标机镜像构建/导入 | PASS | 通过 Daocloud 前缀拉取同一固定 digest；镜像 ID `sha256:9445e84b98408f4c341da945b456a7ca3d3bf806d64d748ea982bf8ab09881ab`，33 个源码文件安装成功 |
 | 1017 完整权重校验 | PASS | 48/48 分片完整 SHA256 通过，revision `f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad` |
 | SM80 数值 / Graph / `ep8` | PASS | TP8 Graph capture、TP4DP2/EP8 启动和 smoke 通过；尚未完成题级精度回归 |
-| 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图和约 18K prompt 通过；256K/1M 容量 soak 尚未完成 |
-| 同负载 A/B 与精度回归 | PARTIAL | 已完成短请求 C64/C128 吞吐矩阵；自然任务质量和完整对照仍未完成 |
+| 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图、260K prompt 和 1,000,016 prompt 单请求均通过；多请求长文 soak 尚未完成 |
+| 同负载 A/B 与精度回归 | PARTIAL | 已完成 C64/C128/C256 短请求矩阵和 prefill 矩阵；自然任务质量和完整对照仍未完成 |
 
 原 `dsv4-flash` 容器和模型目录保留，已按用户授权停止旧服务；当前 GPU 验收使用独立测试容器。
 当前推荐测试容器为 `tp4dp2 / ep8 + DSpark k5 + stacked-kv + max-seqs=256`。

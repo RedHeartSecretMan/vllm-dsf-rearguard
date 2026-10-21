@@ -97,18 +97,20 @@ stacked KV 会增加权重副本；dense BF16 物化还可能追加 BF16 缓冲�
 - 原生图文：固定图像夹具返回正确描述，图像 token 计数为 578；
 - TP4DP2 / EP8：文本、工具、图像和约 18K prompt 长上下文通过。
 
-当前推荐配置是 `tp4dp2 / ep8`、DSpark k5、`stacked-kv`、全局 `max-seqs=128`。短合成请求、输出上限 128 token 的矩阵结果：C64 约 2358 token/s，C128 约 4496 token/s，成功率均为 100%。一次 `VLLM_MARLIN_USE_ATOMIC_ADD=1` A/B 仅约 1768 token/s，已排除，不进入默认配置。
+首轮 C128 测量使用 `tp4dp2 / ep8`、DSpark k5、`stacked-kv`、全局 `max-seqs=128`；短合成请求 C64 约 2358 token/s，C128 约 4496 token/s，成功率均为 100%。后续 C256 测量已将推荐配置提升到全局 `max-seqs=256`。一次 `VLLM_MARLIN_USE_ATOMIC_ADD=1` A/B 仅约 1768 token/s，已排除，不进入默认配置。
 
-这些结果证明当前实现能在目标 A100 上稳定运行；自然任务精度、256K/1M 长文 soak、长时间稳定性和更完整的生产负载矩阵仍需后续测试。
+这些结果证明当前实现能在目标 A100 上稳定运行；自然任务精度、长时间稳定性和更完整的生产负载矩阵仍需后续测试。260K 与 1M 单请求容量已通过，尚未完成多请求长文 soak。
 
 ## 单请求 Prefill / Decode 拆分
 
-当前运行配置为 TP4DP2 / EP8、DSpark k5、stacked-kv、全局 `max-seqs=128`、上下文上限 262144。目标机单请求测量结果：
+此前 C128 服务上的单请求测量为 TP4DP2 / EP8、DSpark k5、stacked-kv、上下文上限 262144；当前 C256 单请求 decode 结果已更新为下方补充记录。
 
 - decode：17 prompt tokens、128 output tokens，TTFT 1.129 s，TPOT 3.60 ms，约 278 token/s；
 - prefill：18010 prompt tokens、`max_tokens=1`，首 token 延迟 5.386 s，按 prompt tokens / 首 token 延迟估算约 3344 token/s。
 
 Prefill 数字包含调度、队列和首 token 开销，是服务层近似值；decode 数字受 DSpark speculative decoding 和流式 chunk 口径影响。C128 短请求整机吞吐约 4496 token/s，不能与单请求 decode 速度直接比较。
+
+当前 C256 单请求 decode：17 prompt tokens、128 output tokens，TTFT 0.566 s，TPOT 3.58 ms，约 279.5 token/s；C128/C256 的整机吞吐不能与该单请求速度直接比较。
 
 ## C256 与长上下文补充验收（2026-10-21）
 
@@ -124,4 +126,4 @@ Prefill 数字包含调度、队列和首 token 开销，是服务层近似值�
 | 250016 | 28.972 s | 约 8630 token/s |
 | 260016 | 30.597 s | 约 8498 token/s |
 
-260K prompt 接近当前 262144 context 上限；256K/1M 以上的容量 soak、长时间稳定性和自然任务质量回归仍需单独完成。
+260K prompt 接近当前 262144 context 上限；另一个专用 1M 配置已通过 1,000,016 prompt 单请求，首 token 延迟约 223.7 s、prefill 近似约 4470 token/s。多请求长文 soak、长时间稳定性和自然任务质量回归仍需单独完成。
