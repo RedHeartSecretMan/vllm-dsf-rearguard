@@ -19,8 +19,7 @@
 | 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图、260K prompt 和 1,000,016 prompt 单请求均通过；多请求长文 soak 尚未完成 |
 | 同负载 A/B 与精度回归 | PARTIAL | 已完成 C64/C128/C256 短请求矩阵和 prefill 矩阵；自然任务质量和完整对照仍未完成 |
 
-原 `dsv4-flash` 容器和模型目录保留，已按用户授权停止旧服务；当前 GPU 验收使用独立测试容器。
-当前推荐测试容器为 `tp4dp2 / ep8 + DSpark k5 + stacked-kv + max-seqs=256`。
+当前推荐验收配置为 `tp4dp2 / ep8 + DSpark k5 + stacked-kv + max-seqs=256`。
 
 目标机默认 `python3` 指向 3.6，最初的目标机 CPU 检查因此失败；
 改用已安装的 `/usr/bin/python3` 3.10 后完成回归。另修复宿主已有同名 `scripts`
