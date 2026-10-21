@@ -9,11 +9,11 @@
 | 目标机已有 config / encoding | PASS | 两文件 SHA256 与固定官方快照一致 |
 | 工具续轮问题复现 | PASS | 旧编码器丢失同轮思考历史，官方保留；修复后参考差分通过 |
 | CPU 编码/renderer 测试 | PASS | 包含全部 5 个官方输入文件的 40 种模式/effort 组合，及长工具历史和上下文裁剪；不运行模型 |
-| 全部标准库回归 | PASS | 共 40 项在本地通过；包括安装、来源、配置和计量契约、消息边界和 wrapper 归属语义 |
+| 全部标准库回归 | PASS | 共 41 项在本地通过；包括安装、来源、配置和计量契约、消息边界和 wrapper 归属语义 |
 | CPU 张量/控制流回归 | PASS | 34 个场景在目标机 GPU 不可见环境中通过；固定镜像构建阶段的 runc/无网络原生 loader 检查也通过 |
 | 长工具历史编码 A/B | PASS | 6 档目标机 CPU 对照，全部逐字匹配官方参考；详见 [优化记录](optimization-progress.md) |
 | Python 源码编译与静态检查 | PASS | 源码编译、项目自有代码 Ruff 检查、构建脚本 Bash 语法检查 |
-| 目标机镜像构建/导入 | PASS | 通过 Daocloud 前缀拉取同一固定 digest；镜像 ID `sha256:9445e84b98408f4c341da945b456a7ca3d3bf806d64d748ea982bf8ab09881ab`，33 个源码文件安装成功 |
+| 目标机镜像构建/导入 | PASS | 通过 Daocloud 前缀拉取同一固定 digest；当前候选镜像 ID `sha256:8d55453d4ef3ebce740f1d86474b349471ab40605cb77101efba35bea6f79c99`，33 个源码文件安装成功 |
 | 1017 完整权重校验 | PASS | 48/48 分片完整 SHA256 通过，revision `f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad` |
 | SM80 数值 / Graph / `ep8` | PASS | TP8 Graph capture、TP4DP2/EP8 启动和 smoke 通过；尚未完成题级精度回归 |
 | 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图、260K prompt 和 1,000,016 prompt 单请求均通过；多请求长文 soak 尚未完成 |

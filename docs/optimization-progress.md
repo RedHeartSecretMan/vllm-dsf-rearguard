@@ -76,11 +76,11 @@ stacked KV 会增加权重副本；dense BF16 物化还可能追加 BF16 缓冲�
 
 目标服务器 `/usr/bin/python3` 3.10 复测 owned-message 路径：64 / 256 / 1024 轮的 chat 中位数分别为 1.71→0.93 ms、6.61→3.44 ms、26.62→14.03 ms；thinking 分别为 1.78→0.97 ms、6.94→3.79 ms、28.82→15.76 ms，约 1.83–1.92x。该数据仍是 prompt 编码阶段，不代表端到端服务提升。
 
-另外修复工具图片排序的会话边界：新的 user/system/assistant 轮会清空上一轮的 tool-call 排序键，避免无关连续 tool 结果继承旧顺序。新增跨边界回归；当前 40 项标准库测试全部通过。
+另外修复工具图片排序的会话边界：新的 user/system/assistant 轮会清空上一轮的 tool-call 排序键，避免无关连续 tool 结果继承旧顺序。新增跨边界回归；当前 41 项标准库测试全部通过。
 
 ## GPU 首轮验收（2026-10-21）
 
-固定 digest 基础镜像通过 `docker.m.daocloud.io` 前缀拉取，内容 digest 仍为 `sha256:349690323ab9aba712111529ed1ca60730199205d8202f67895ffde85b451be3`。镜像构建阶段的 40 项测试、源码指纹和原生 MXFP8/UE8M0 scale loader 检查均通过。
+固定 digest 基础镜像通过 `docker.m.daocloud.io` 前缀拉取，内容 digest 仍为 `sha256:349690323ab9aba712111529ed1ca60730199205d8202f67895ffde85b451be3`。镜像构建阶段的 41 项测试、源码指纹和原生 MXFP8/UE8M0 scale loader 检查均通过。
 
 真实 A100 smoke 已覆盖：
 
