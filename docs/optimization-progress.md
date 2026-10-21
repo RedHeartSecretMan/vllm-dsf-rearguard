@@ -131,3 +131,9 @@ Prefill 数字包含调度、队列和首 token 开销，是服务层近似值�
 | 1048576 | 约 7740 token/s | 约 279.3 token/s | 约 4240 token/s |
 
 结论：1M 上限不会明显改变单请求 decode，但会让同一 260K 输入的 prefill 约下降 9%，并使高并发 C256 吞吐下降约 42%。原因来自更大的 KV/cache 规划、调度和 Graph 工作区，而不是单纯的 decode kernel 速度。
+
+## 1M bounded prefill workspace（2026-10-21）
+
+新增 `VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE=1`，仅通过 `--experimental bounded-prefill` 开启。1M 配置下，indexer workspace 从多请求上界收敛到 `max_model_len / compress_ratio`，即单请求完整压缩上下文；metadata builder 对更大的多请求 prefill 继续分块，因此不会降低 1M 容量上限。
+
+同一固定镜像、TP4DP2/EP8、DSpark k5、stacked-kv、CUDA Graph、全局 C256 的 benchmark 结果（1K 输入、128 输出、冷缓存）为：unbounded C128 / C256 约 843 / 1109 token/s；bounded C128 / C256 约 1286 / 1369 token/s，C256 使用相同 seed 8080，均 0 失败。bounded 单请求 260K prefill 约 9067 token/s，约 1M prefill 约 4772 token/s，均通过；1K 单请求 128 输出的流式 decode 约 158 token/s。该候选将同 seed 的 C256 提升约 23%，但仍保持显式开关，不覆盖 262K 默认配置。

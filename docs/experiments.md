@@ -85,3 +85,16 @@
 ## 1M 上限严格对照
 
 在完全相同的 TP4DP2/EP8、DSpark k5、stacked-kv、CUDA Graph、global `max-seqs=256` 配置下，只切换 `context=262144/1048576`：260K prefill 近似吞吐为约 8498 / 7740 token/s，单请求 decode 约 279.5 / 279.3 token/s，C256 整机吞吐约 7270 / 4240 token/s。1M 适合容量请求，262K 更适合作为当前高并发默认值。
+
+## 1M bounded prefill workspace A/B
+
+为减少 1M 上限对高并发的静态工作区占用，新增 `--experimental bounded-prefill`。它把 indexer prefill workspace 的预留下限设为 `max_model_len / compress_ratio`，正好覆盖一个完整 1M 请求；更大的多请求 prefill 仍由 metadata builder 分块处理。该开关不改变模型上限、KV 格式或 decode kernel。
+
+同一固定 digest 镜像、TP4DP2/EP8、DSpark k5、stacked-kv、CUDA Graph、全局 C256、1K 输入和 128 输出的可复现脚本结果如下。每组请求均为 0 失败并通过冷缓存校验；C256 使用相同 seed 8080，unbounded 与 bounded 分别使用独立新容器。
+
+| profile | C128 token/s | C256 token/s | 260K prefill token/s | 1M prefill token/s |
+|---|---:|---:|---:|---:|
+| 1M unbounded | 约 843 | 约 1109 | — | — |
+| 1M bounded | 约 1286 | 约 1369 | 约 9067 | 约 4772 |
+
+bounded 在当前统一脚本口径下将同 seed 的 C256 提升约 23%，并保持 1M 单请求通过；它适合作为 1M 高并发 profile。旧的短矩阵使用另一套客户端计时口径，不能与本表直接合并排序。

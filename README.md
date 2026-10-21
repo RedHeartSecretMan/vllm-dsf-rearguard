@@ -11,7 +11,7 @@
 - 恢复官方图像 token 布局和 1024-token 图像预算，完善缓存图片、重复图片、图片起点和长宽比边界。
 - 优化长上下文 indexer 工作区、decode metadata、top-k 共享和 DSpark context KV 投影。
 - 将长工具历史的用户轮边界扫描改为单次计算；wrapper 复用已拥有的消息对象，减少重复遍历和深拷贝。
-- 提供 `decode-metadata`、`ragged-reuse`、`stacked-kv` 三个独立实验开关，默认关闭，可单独进行 A/B 测试。
+- 提供 `decode-metadata`、`ragged-reuse`、`stacked-kv` 和 `bounded-prefill` 四个独立实验开关，默认关闭，可单独进行 A/B 测试。
 
 长工具历史的 CPU 编码已经在目标机完成对照：1024 轮工具历史约从 1.34 秒降至 28–30 ms；owned-message 路径额外约提升 1.83–1.92×。这些数字描述 prompt 编码阶段，完整服务性能需要在目标 GPU 上实测。
 
@@ -64,6 +64,8 @@ python3 launch.py "$MODEL" \
 
 1017 的 DSpark 训练块大小为 5，因此当前服务配置使用 k5。
 
+1M 上下文的高并发 profile 可额外启用 `--experimental bounded-prefill`。它将稀疏 indexer 的预留工作区收敛到单请求可容纳的压缩上下文，保留 1M 单请求能力，减少高并发时的静态预留。
+
 ## 性能实验
 
 先运行功能 smoke，再运行性能测试：
@@ -92,6 +94,9 @@ python3 -m scripts.benchmark \
 python3 launch.py "$MODEL" \
   --parallel tp4dp2 \
   --dspark 5 \
+  --context 1048576 \
+  --max-seqs 256 \
+  --experimental bounded-prefill \
   --experimental decode-metadata \
   --experimental ragged-reuse \
   --experimental stacked-kv

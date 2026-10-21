@@ -166,6 +166,10 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(changed["experimental"], ["ragged-reuse"])
         self.assertIn("VLLM_DSV41_REUSE_TOPK_RAGGED=1", changed["command"])
         self.assertIn("VLLM_DSV41_STACKED_DRAFT_KV=0", changed["command"])
+        bounded = self.plan(
+            "--context", "1048576", "--experimental", "bounded-prefill"
+        )
+        self.assertIn("VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE=1", bounded["command"])
         with self.assertRaisesRegex(ValueError, "requires DSpark"):
             self.plan("--dspark", "0", "--experimental", "stacked-kv")
 
