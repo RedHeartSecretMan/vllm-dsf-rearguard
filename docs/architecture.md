@@ -1,6 +1,6 @@
-# 实现设计
+# 项目架构
 
-本文件描述当前仓库已经做出的改进、验证边界和运行取舍。
+本文件描述适配层、运行配置和验证边界。
 
 ## 运行目标
 
@@ -37,6 +37,7 @@
 - decode metadata 候选跳过纯 decode 不使用的压缩序列长度计算，并直接写入已有 validity buffer。
 - top-k ragged 候选在 index-source 层构建一次，由同一步消费者共享；缓存键包含输入地址、stride、形状、block table、请求映射、validity 和 batch 维度，避免跨步误复用。
 - DSpark stacked KV 候选将三次包含无用 Q 输出的 context 投影合并为一次 KV-only 投影，保留逐层 norm、RoPE、KV group 和 slot mapping。
+- `prefill-throttle` 提供显式的长 prefill admission cadence，让混合负载中的 decode 请求获得稳定调度机会；它只改变调度时序，默认关闭，避免未经 mixed case A/B 就改变当前 profile。
 
 三个候选都通过 CPU 控制路径和独立安装器检查，默认关闭：
 
@@ -53,4 +54,4 @@ CPU 测试验证输出、地址、边界和变更输入；原生 MXFP8 loader、
 
 构建脚本只接受干净 Git 提交，使用提交归档构建，并把源码 revision 写入镜像。启动前在无 GPU 的 runc 容器中检查统一适配层指纹，旧镜像不能冒充当前候选。实验变量写入启动回执，模型、端口、镜像 ID 和源码清单可独立回读。
 
-现有服务不会被测试脚本停止、删除或覆盖。GPU 测试需要用户先确认停服窗口，随后按“数值 / Graph / `ep8` → 功能 smoke → 同负载 A/B → 长上下文和图文压力”的顺序执行。
+GPU 验收按“数值 / Graph / `ep8` → 功能 smoke → 同负载 A/B → 长上下文和图文压力”的顺序执行。
