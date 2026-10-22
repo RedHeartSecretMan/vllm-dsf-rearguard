@@ -29,26 +29,39 @@
 
 长工具历史只计算一次最后用户轮边界，避免每条消息重复倒序扫描。wrapper 已经拥有独立的规范化消息对象，因此编码阶段提供 owned-message 路径，避免二次深拷贝；公共接口仍默认复制输入，保留调用者不可变语义。
 
-目标机 CPU 测量显示：64、256、1024 轮工具历史的 owned-message 路径约提升 1.83–1.92×；结合单次边界扫描后，1024 轮整体 prompt 编码约提升 45–47×。这些数据属于 Python 编码阶段，不代表端到端生成吞吐。
+目标机 CPU 测量（Python 3.10，每档三次交错取中位数，输出均与官方编码器逐字一致）：
 
-### 长上下文和 decode 候选
+| 工具轮数 | chat：原 / 新 | thinking：原 / 新 | 加速比 |
+|---:|---:|---:|---:|
+| 64 | 7.115 / 1.876 ms | 7.102 / 1.922 ms | 3.7× |
+| 256 | 87.919 / 7.333 ms | 87.604 / 7.312 ms | 12.0× |
+| 1024 | 1341.594 / 28.453 ms | 1347.609 / 29.625 ms | 45.5–47.2× |
 
-- indexer 工作区按真实 chunk builder 的查询/键行上界分配，避免压缩比除法造成合法多请求 chunk 的空间不足。
-- decode metadata 候选跳过纯 decode 不使用的压缩序列长度计算，并直接写入已有 validity buffer。
-- top-k ragged 候选在 index-source 层构建一次，由同一步消费者共享；缓存键包含输入地址、stride、形状、block table、请求映射、validity 和 batch 维度，避免跨步误复用。
-- DSpark stacked KV 候选将三次包含无用 Q 输出的 context 投影合并为一次 KV-only 投影，保留逐层 norm、RoPE、KV group 和 slot mapping。
-- `prefill-throttle` 提供显式的长 prefill admission cadence，让混合负载中的 decode 请求获得稳定调度机会；它只改变调度时序，默认关闭，避免未经 mixed case A/B 就改变当前 profile。
+这是 Python prompt 编码阶段的结果，不包含 tokenizer、模型和端到端服务吞吐，原始采样见 [目标机回执](evidence/encoding-benchmark-target.json)。
 
-三个候选都通过 CPU 控制路径和独立安装器检查，默认关闭：
+### 长上下文与 decode 优化
+
+下表列出各优化的实现和启用方式。实验开关默认关闭，通过 `launch.py --experimental <名称>` 显式启用，可重复传入以组合。各开关的 A/B 结果和采用结论见 [基准结果](benchmarks.md)。
+
+| 开关 | 实现 |
+|---|---|
+| `bounded-prefill` | indexer 工作区按“单个完整上下文请求的压缩行数”预留，更大的多请求 prefill 由 metadata builder 拆成多个 chunk，不降低 1M 单请求容量。 |
+| `prefill-throttle` | 长 prefill（默认 4096 token 及以上）在有 decode 请求运行时每 4 个 scheduler step 释放一次，短请求不受影响。只改变调度时序，不改变 KV 格式和 attention kernel。 |
+| `stacked-kv` | DSpark 将三次包含无用 Q 输出的 context 投影合并为一次 KV-only 投影，保留逐层 norm、RoPE、KV group 和 slot mapping。开启后会增加权重副本。 |
+| `decode-metadata` | 纯 decode 跳过未使用的压缩序列长度计算，并直接写入已有的 validity buffer。 |
+| `ragged-reuse` | top-k ragged 在 index-source 层构建一次并由同一步的消费者共享；缓存键包含输入地址、stride、形状、block table、请求映射、validity 和 batch 维度。 |
+
+另有两个没有采用的实验入口：`--logits-row-chunk` 分块释放 SM80 MQA logits（默认 `0`），环境变量 `VLLM_SM80_CANDIDATE_MQA_COMPACT=1` 启用紧凑 candidate-MQA top-k。
+
+indexer 工作区容量按真实 chunk builder 的查询/键行上界计算，避免压缩比除法造成合法多请求 chunk 的空间不足。
 
 ```bash
 python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 \
-  --experimental decode-metadata \
-  --experimental ragged-reuse \
-  --experimental stacked-kv
+  --experimental stacked-kv \
+  --experimental decode-metadata
 ```
 
-CPU 测试验证输出、地址、边界和变更输入；原生 MXFP8 loader、Triton kernel、CUDA Graph replay、显存占用和真实 A100 速度仍需 GPU 验收。
+CPU 测试验证输出、地址、边界和变更输入，回执见 [CPU 热路径回执](evidence/hotpaths-cpu.json)。各开关的 GPU 启动、性能与精度结果分别见 [基准结果](benchmarks.md) 和 [验证记录](validation.md)。
 
 ## 构建与启动安全
 

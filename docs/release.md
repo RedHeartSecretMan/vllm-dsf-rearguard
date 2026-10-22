@@ -2,27 +2,50 @@
 
 ## 0.1.0
 
-`0.1.0` 是当前固定 1017 权重和 fixed-digest runtime 的首个可复现实验版本，目标平台为 `8×A100-SXM4-80GB / NVSwitch`。
+`0.1.0` 是面向固定 1017 权重和固定 digest 运行时的首个可复现版本，目标平台为 `8×A100-SXM4-80GB / NVSwitch`。
 
-### 已包含
+### 包含内容
 
-- 统一 vLLM 适配层和原子安装清单。
+- 统一的 vLLM 适配层和原子安装清单。
 - 1017 模型协议、工具续轮、原生图文输入和视觉边界处理。
-- TP8 / EP8 与 TP4DP2 / EP8 启动配置。
+- `tp8 / ep8` 与 `tp4dp2 / ep8` 两种启动配置。
 - DSpark k5、CUDA Graph、FP8 KV cache、稀疏 MLA、EPLB 和 EP8 通信路径。
-- 长上下文 workspace 约束、query-sharded decode metadata、DSpark KV 投影和 benchmark 工具。
-- CPU 合约、协议 parity、图文 smoke、长上下文和 GPQA Diamond 验证。
+- 长上下文 indexer 工作区约束、query-sharded decode metadata 和 DSpark KV 投影。
+- ISL/OSL 矩阵、长尾场景、精度准入和 GPQA Diamond 验收工具。
+
+### 推荐配置
+
+262K 上下文：`tp4dp2 / ep8`、DSpark k5、`stacked-kv`、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256`、`max-num-batched-tokens=16384`。
+
+1M 上下文：在上述配置上增加 `--context 1048576 --experimental bounded-prefill`。
 
 ### 结果
 
-- 262K 上限、C256 固定短请求：约 `7270 token/s`。
-- 1M bounded profile、C256：约 `1369 token/s`。
-- 262K 单请求 prefill：约 `8498 token/s`。
-- 单请求 decode：约 `279 token/s`。
-- GPQA Diamond 4 轮平均：`91.54%`。
+| 场景 | 结果 |
+|---|---:|
+| 262K 上限，C256 短请求整机输出吞吐 | 7270 token/s |
+| 1M 上限，C256 bounded profile | 1369 token/s |
+| 260K 单请求 prefill | 8498 token/s |
+| 单请求 decode | 279.5 token/s |
+| GPQA Diamond，4 轮平均 | 91.54% |
 
-详细数据见 [基准结果](benchmarks.md)，验证范围见 [验证记录](validation.md)。
+完整数据见 [基准结果](benchmarks.md)，验证范围见 [验证记录](validation.md)。
 
-### 边界
+### 实验开关
 
-compact candidate-MQA、较大的 prefill chunk、SM80 logits row chunk 和 adaptive DSpark 等实验路径没有进入默认配置。它们保留在 `perf` 分支作为后续研究入口，并不构成 `0.1.0` 的性能承诺。
+以下开关默认关闭，需要通过 `launch.py --experimental`、`--logits-row-chunk` 或容器环境变量显式启用。`stacked-kv` 与 `bounded-prefill` 已包含在推荐配置中，启动时仍需要显式传入：
+
+| 开关 | 作用 | 当前结论 |
+|---|---|---|
+| `stacked-kv` | 合并 DSpark context 投影 | 推荐配置使用 |
+| `bounded-prefill` | 收敛 indexer prefill 工作区 | 1M 高并发推荐使用，C256 提升 23.4% |
+| `prefill-throttle` | 按 cadence 释放长 prefill | decode 吞吐 +16.9%，prefill TPS -17.7%，按负载选用 |
+| `decode-metadata` + `ragged-reuse` | decode 元数据与 top-k 复用 | 组合后 C256 -8.5%，不采用 |
+| 环境变量 `VLLM_SM80_CANDIDATE_MQA_COMPACT=1` | 紧凑 candidate-MQA top-k | C256 下输出摘要与 dense 路径不一致，不采用 |
+| `--logits-row-chunk` | 分块释放 SM80 MQA logits | 260K prefill +7.4% 耗时，不采用 |
+
+各开关的 A/B 数据见 [基准结果](benchmarks.md)。
+
+### 验证范围
+
+结果覆盖固定 1017 权重的文本、工具、图文、长上下文、并发和 mixed prefill/decode 场景。两个及以上 1M 长请求同时进入的容量和全模型 PPL 尚未测试。
