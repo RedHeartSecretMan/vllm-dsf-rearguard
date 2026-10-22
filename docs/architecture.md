@@ -12,7 +12,7 @@
 
 `adaptation/files` 是写入基础 vLLM 镜像的唯一源码树。它把基础运行时集成、1017 模型支持和 SM80 加速实现收敛到同一套最终文件；`adaptation/manifest.json` 记录每个文件的基础哈希、最终哈希和职责归类，`adaptation/install.py` 负责全量校验后原子写入。清单中的职责字段只用于审计和定位，不会再触发多套安装流程。
 
-`config/runtime` 只保存部署环境与服务默认值，`manifests/` 只保存基础镜像、模型 revision 和来源锁定信息。它们不包含源码覆盖，因此不会形成第二个适配入口。
+`config/runtime` 只保存部署环境与服务默认值，`manifests/` 只保存模型文件清单和基础镜像的 digest。它们不包含源码覆盖，因此不会形成第二个适配入口。
 
 ## 1017 协议与多模态
 

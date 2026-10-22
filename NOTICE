@@ -1,13 +1,57 @@
 DeepSeek V4.1 Flash A100
 Copyright 2026 RedHeartSecretMan.
 
-The vLLM adaptation sources retain their original Apache-2.0 SPDX headers and
-copyright notices. The base runtime and its dependencies keep their own
-licenses; see the pinned source and image records in manifests/sources.json.
+Project-specific launch, model verification, benchmark and test code is licensed
+under Apache-2.0. See LICENSE.
 
-The official DeepSeek encoder, image reference and related fixtures are used
-under the DeepSeek MIT license in licenses/DeepSeek-LICENSE.
+The vLLM adaptation sources in adaptation/files retain their original
+Apache-2.0 SPDX headers and copyright notices. They are modified from vLLM and
+the wtdcode/vllm-backport fork. The base runtime image is pinned by digest in
+Dockerfile and manifests/sources.json (source commit
+a350766628514d597670d2a5217777fdee2ba7f4).
 
-The adaptation also incorporates ideas and source-level changes from the
-projects and upstream changes listed in adaptation/manifest.json. Their
-original notices and licenses remain applicable to the corresponding files.
+This project builds on the following work. Exact payload hashes are recorded in
+adaptation/manifest.json.
+
+- Tokha233/deepseek-v4.1-flash-a100-turbo at
+  fae324ae62ac5cef31b7d38f5d369618e1cae1fa (Apache-2.0): SM80 adaptation
+  source files and configuration.
+- keplerzip/deepseek-v4.1-flash-1017-a100 at
+  fb846337b3c580d885641e23fe5d201725735010 (Apache-2.0): 1017 model encoding,
+  renderer and vision adaptations, parity tests and synthetic vision fixtures.
+- vLLM pull requests #57885, #57434 and #57627: decode metadata, shared top-k
+  packing and stacked context KV.
+- vLLM pull request #56181: DP speculative metadata fix.
+- SGLang pull request #38944: candidate-only indexer algorithm reference.
+
+Model weights and runtime images are not redistributed by this repository.
+Inherited runtime dependencies retain their respective licenses.
+
+--------------------------------------------------------------------------------
+
+DeepSeek official encoder, image processor, model files and encoding test
+fixtures (adaptation/reference and tests/fixtures/official_encoding), taken from
+ModelScope revision f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad, are licensed under
+the MIT License:
+
+MIT License
+
+Copyright (c) 2023 DeepSeek
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

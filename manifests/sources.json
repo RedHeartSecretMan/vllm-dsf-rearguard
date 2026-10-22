@@ -1,23 +1,6 @@
 {
-  "adaptation_reference": {
-    "repository": "https://github.com/Tokha233/deepseek-v4.1-flash-a100-turbo",
-    "commit": "fae324ae62ac5cef31b7d38f5d369618e1cae1fa"
-  },
-  "model_reference": {
-    "repository": "https://github.com/keplerzip/deepseek-v4.1-flash-1017-a100",
-    "commit": "fb846337b3c580d885641e23fe5d201725735010"
-  },
-  "vision_reference": {
-    "repository": "https://github.com/keplerzip/deepseek-v4.1-flash-a100",
-    "commit": "2265d0d233f3f6de5c018862c5bc6210a69adf41"
-  },
   "base_image": {
     "image": "lazymio/vllm-backport@sha256:349690323ab9aba712111529ed1ca60730199205d8202f67895ffde85b451be3",
     "source_commit": "a350766628514d597670d2a5217777fdee2ba7f4"
-  },
-  "model": {
-    "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
-    "source": "ModelScope",
-    "revision": "f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad"
   }
 }

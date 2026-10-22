@@ -1,49 +1,44 @@
 # 验证记录
 
-本文记录当前适配层已经完成的功能、协议和精度验证。性能数字统一见 [基准结果](benchmarks.md)。
+本文记录适配层已完成的功能、协议与精度验证，性能数据见 [基准结果](benchmarks.md)。
 
-## 构建与来源
+## 构建与来源校验
 
-| 项目 | 结果 |
-|---|---|
-| 官方 1017 编码器来源 | 固定 revision，SHA256 与参考一致 |
-| 官方文件清单 | 83 个文件的大小和 SHA256 全部一致 |
-| 1017 权重 | 48/48 分片完整 SHA256 通过 |
-| 适配层安装 | 全量 manifest 校验后原子写入 |
-| CPU 合约测试 | 59 项通过，2 项在无 PyTorch 环境跳过 |
-| Python 编译与静态检查 | 通过 |
-| 固定 digest 镜像 | 构建、runtime 和 native loader 检查通过 |
+| 检查项 | 入口 | 结果 |
+|---|---|---|
+| 模型文件与权重校验 | `scripts/model_check.py` | 固定 ModelScope revision，83 个文件（含 48 个权重分片）大小与 SHA256 全部通过 |
+| 适配层原子安装 | `adaptation/install.py` | 33 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
+| 运行时源码复核 | `scripts/check_runtime.py` | 容器内已安装文件与源码清单指纹一致 |
+| CPU 合约与回归测试 | `unittest` | 59 项通过（2 项 PyTorch 运行时测试在纯 CPU 环境跳过） |
+| 固定 digest 镜像构建 | `scripts/build.sh` | 镜像构建、runtime 校验与原生 MXFP8 loader 检查通过 |
 
 ## 协议与模型功能
 
-- 工具续轮中的 reasoning 内容、工具结果顺序和图片关联与官方编码器一致。
-- 同步和异步 renderer 共用稳定的消息排序逻辑。
-- 官方五组输入文件覆盖 40 种模式和 effort 组合，输出逐字匹配。
-- 原生图文输入、单图、多图、缓存图片和重复图片边界通过。
-- `tp8 / ep8` 与 `tp4dp2 / ep8` 均完成启动和文本 smoke。
-- CUDA Graph、FP8 KV cache、DSpark k5、EPLB 和 EP8 通信路径完成目标机启动验收。
-- 260K 单请求和约 1M 单请求均完成容量验收。
+- **工具调用与推理续轮**：多轮工具续轮中的 `reasoning_content`、反序工具结果归并和图片顺序与官方编码器一致。
+- **消息渲染一致性**：同步与异步 renderer 共用同一消息归一化与排序逻辑，跨 `user` / `system` / `assistant` 边界自动隔离工具状态。
+- **官方编码器对齐**：官方 5 组输入夹具覆盖 40 种思考模式与 `reasoning_effort` 组合，编码输出逐字匹配。
+- **原生多模态**：单图、多图、缓存命中图片、重复图片及完整 1024-token 视觉预算边界全部通过。
+- **分布式与投机解码**：`tp8 / ep8` 与 `tp4dp2 / ep8`、CUDA Graph、FP8 MLA KV cache、DSpark k5、EPLB 和 EP8 通信路径均完成目标机启动验收，并通过文本、工具和图文 smoke。
+- **长上下文容量**：260K 与 1,000,016 token 的单请求 prompt 均完成预填充验收。
 
 ## 精度准入
 
-每个性能候选使用固定请求和 `seed=1017` 运行 acceptance suite，并比较 assistant-visible 输出摘要。文本、reasoning、结构化 `tool_calls`、工具续轮、图文和长上下文结果都纳入摘要；摘要缺失或变化时，候选不进入推荐配置。
+每个性能候选通过 `scripts/acceptance.py` 与 `scripts/quality_gate.py` 在固定请求集（`temperature=0`、`seed=1017`）上进行对比校验：
 
-服务没有返回 draft/accepted 计数时，speculative acceptance 标记为 unavailable，不从 TPS 反推接受率或精度。
+- 对文本、`reasoning_content`、结构化 `tool_calls`、工具续轮、图文和长上下文输出计算 SHA256 摘要。
+- 候选与基线的全部 case 均需通过且输出摘要一致，方可纳入默认推荐配置。
+- 当服务端返回 `draft_tokens` / `accepted_tokens` 计数时，`scripts/quality_metrics.py` 自动汇总投机解码接受率。
 
 ## GPQA Diamond
 
-使用完整 198 题、`eval_batch_size=32`、`top_p=0.95`、`max_tokens=65536`、`reasoning_effort=max` 和 temperature 0，完成 4 轮重复：
+基于完整 198 题（`eval_batch_size=32`、`top_p=0.95`、`max_tokens=65536`、`reasoning_effort=max`、`temperature=0`）完成 4 轮独立评测：
 
-| Round | Score |
+| 轮次 | 准确率 |
 |---:|---:|
-| 1 | 92.42% |
-| 2 | 90.40% |
-| 3 | 92.93% |
-| 4 | 90.40% |
-| 平均 | **91.54%** |
+| Round 1 | 92.42% |
+| Round 2 | 90.40% |
+| Round 3 | 92.93% |
+| Round 4 | 90.40% |
+| **平均** | **91.54%** |
 
-4 轮均为 198/198 评分，失败率为 0。当前没有旧实现的同配置 GPQA 结果，因此该分数作为当前实现的精度基准，不能单独计算相对旧版本的精度变化。
-
-## 验证边界
-
-当前结果覆盖固定 1017 权重、文本、工具、图文、长上下文、并发和 mixed prefill/decode case。全模型 PPL、2×/4× 1M 多请求容量以及未经 GPU 验收的实验开关不属于 `v0.1.0` 的默认性能结论。
+4 轮均为 `198/198` 完整评分，失败率为 `0`。
