@@ -5,8 +5,8 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import sysconfig
+from pathlib import Path
 
 
 def digest(path: Path) -> str:

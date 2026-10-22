@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import itertools
+import os
 import time
 from collections import defaultdict, deque
 from collections.abc import Iterable
@@ -75,6 +76,20 @@ from vllm.v1.structured_output.utils import strip_speculative_padding
 from vllm.v1.utils import record_function_or_nullcontext
 
 logger = init_logger(__name__)
+
+
+def _prefill_throttle_value(name: str, default: int) -> int:
+    """Read a bounded scheduler tuning value from the process environment.
+
+    Scheduler construction happens inside the worker process, so this keeps
+    the candidate opt-in and avoids adding another vLLM configuration field.
+    Invalid values fall back to the documented default instead of making the
+    service fail during startup.
+    """
+    try:
+        return max(1, int(os.environ.get(name, str(default))))
+    except (TypeError, ValueError):
+        return default
 
 
 class Scheduler(SchedulerInterface):
@@ -330,6 +345,18 @@ class Scheduler(SchedulerInterface):
         # prefill batch fully drained the waiting queue. Prefill throttling
         # is disabled in this case.
         self.prefill_capacity_bound = False
+        # Optional stage-aware prefill throttle.  The normal scheduler path
+        # remains unchanged when the flag is unset; the launch wrapper exposes
+        # it as an experimental candidate so every A/B run records the choice.
+        self.prefill_throttle_enabled = (
+            os.environ.get("VLLM_DSV41_PREFILL_THROTTLE") == "1"
+        )
+        self.prefill_throttle_cadence = _prefill_throttle_value(
+            "VLLM_DSV41_PREFILL_THROTTLE_CADENCE", 4
+        )
+        self.prefill_throttle_min_tokens = _prefill_throttle_value(
+            "VLLM_DSV41_PREFILL_THROTTLE_MIN_TOKENS", 4096
+        )
         self.scheduler_reserve_full_isl = (
             self.scheduler_config.scheduler_reserve_full_isl
         )
@@ -605,10 +632,31 @@ class Scheduler(SchedulerInterface):
         self.kv_cache_manager.new_step_starts()
 
         # DP prefill balancing: on a throttled (non-cadence-aligned) step, defer
-        # all prefill compute unless saturated.
-        defer_prefills = (
-            throttle_prefills and not self.prefill_capacity_bound
-        ) and any(not r.is_prefill_chunk for r in self.running)
+        # all prefill compute unless saturated.  The opt-in path adds a bounded
+        # cadence: one step admits long prefills, then the next N-1 steps keep
+        # the decode lane clear.  This avoids the permanent-defer behaviour of
+        # the old bool-only hook while preserving its default-off semantics.
+        if self.prefill_throttle_enabled:
+            throttle_prefills = True
+            cadence_release = (
+                self.current_step % self.prefill_throttle_cadence == 0
+            )
+            defer_prefills = (
+                not cadence_release
+                and any(not r.is_prefill_chunk for r in self.running)
+            )
+        else:
+            defer_prefills = (
+                throttle_prefills and not self.prefill_capacity_bound
+            ) and any(not r.is_prefill_chunk for r in self.running)
+
+        throttle_long_only = self.prefill_throttle_enabled
+
+        def is_long_prefill(request: Request, computed_tokens: int) -> bool:
+            return (
+                request.num_tokens - computed_tokens
+                >= self.prefill_throttle_min_tokens
+            )
 
         # First, schedule the RUNNING requests.
         req_index = 0
@@ -639,7 +687,14 @@ class Scheduler(SchedulerInterface):
                 req_index += 1
                 continue
 
-            if defer_prefills and request.is_prefill_chunk:
+            if (
+                defer_prefills
+                and request.is_prefill_chunk
+                and (
+                    not throttle_long_only
+                    or is_long_prefill(request, request.num_computed_tokens)
+                )
+            ):
                 # DP prefill balancing: defer this in-progress prefill chunk to a
                 # cadence-aligned step; decodes still run to fill this step.
                 req_index += 1
@@ -1021,7 +1076,14 @@ class Scheduler(SchedulerInterface):
                     # KVTransfer: loading remote KV, do not allocate for new work.
                     assert num_external_computed_tokens > 0
                     num_new_tokens = 0
-                elif defer_prefills and num_computed_tokens < request.num_tokens - 1:
+                elif (
+                    defer_prefills
+                    and num_computed_tokens < request.num_tokens - 1
+                    and (
+                        not throttle_long_only
+                        or is_long_prefill(request, num_computed_tokens)
+                    )
+                ):
                     # DP prefill balancing: defer this step's local prefill
                     # compute to a cadence-aligned step.
                     break

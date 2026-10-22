@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import math
+import os
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
-import os
-
 import torch
-
 import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.distributed import get_dcp_group, get_pcp_group, get_tp_group
@@ -703,6 +702,10 @@ class DeepSeekV32IndexerDecodeMetadata:
     # all of them. Derived here so the consumer never re-partitions, and so
     # `schedule_metadata` below is built from the same slice it describes.
     shard_bounds: tuple[int, int] | None = None
+    # Shared float32 scratch for query-sharded top-k reassembly.  Keeping this
+    # in the worker workspace avoids an allocator and memset allocation in
+    # every indexer layer of a decode step.
+    topk_allreduce_buffer: torch.Tensor | None = None
 
 
 @dataclass
@@ -840,6 +843,31 @@ def get_max_prefill_buffer_size(vllm_config: VllmConfig):
     return max_model_len * 40
 
 
+def _indexer_prefill_buffer_size(
+    vllm_config: VllmConfig, compress_ratio: int
+) -> int:
+    """Return the K-gather capacity shared by metadata and the indexer op.
+
+    The model-side indexer allocates ``max_total_seq_len`` from the same
+    contract.  Keeping the chunk builder on that capacity is required for a
+    bounded 1M profile: otherwise two long requests can be admitted into one
+    chunk while the op only owns one-request storage.
+    """
+    if compress_ratio < 1:
+        raise ValueError("Indexer compression ratio must be positive")
+    max_len = vllm_config.model_config.max_model_len // compress_ratio
+    max_logits_elems = envs.VLLM_SPARSE_INDEXER_MAX_LOGITS_MB * 1024 * 1024 // 4
+    if max_len < 1 or max_logits_elems < 1:
+        raise ValueError("Indexer context and logits budgets must be positive")
+    default_size = min(
+        get_max_prefill_buffer_size(vllm_config),
+        max(max_len, math.isqrt(max_logits_elems * max_len)),
+    )
+    if os.environ.get("VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE") == "1":
+        return max_len
+    return default_size
+
+
 def _supports_varlen_paged_mqa_logits() -> bool:
     return (
         current_platform.is_cuda()
@@ -952,14 +980,52 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                 f"cp_kv_cache_interleave_size=1 (got "
                 f"{self.cp_kv_cache_interleave_size})."
             )
+        # KV compression is needed by both the workspace contract and the
+        # metadata builder.  Resolve it before sizing the shared prefill
+        # buffer so the real worker construction order matches the CPU model.
+        self.compress_ratio = 1
+        if isinstance(self.kv_cache_spec, MLAAttentionSpec):
+            assert isinstance(self.kv_cache_spec.tokens_per_state, int)
+            self.compress_ratio = self.kv_cache_spec.tokens_per_state
+        if self.dcp_world_size > 1 and self.compress_ratio > 1:
+            raise NotImplementedError(
+                "DCP is not supported with sparse indexer KV compression "
+                f"(compress_ratio={self.compress_ratio})."
+            )
         # NOTE(Chen):an estimated max size of flattened_kv. Need to double check.
-        self.max_prefill_buffer_size = get_max_prefill_buffer_size(self.vllm_config)
+        # Keep chunk admission bounded by the same capacity passed to the
+        # SparseAttnIndexer op.  In the bounded 1M profile this prevents a
+        # multi-request chunk from exceeding the one-request K-gather buffer.
+        self.max_prefill_buffer_size = _indexer_prefill_buffer_size(
+            self.vllm_config, self.compress_ratio
+        )
         self.num_speculative_tokens = (
             self.vllm_config.speculative_config.num_speculative_tokens
             if self.vllm_config.speculative_config
             else 0
         )
         self.use_fp4_indexer_cache = dsa_indexer_uses_fp4(self.vllm_config)
+
+        # Query-sharded decode exchanges a float32 top-k matrix after each
+        # indexer layer. Reserve one persistent buffer for that matrix instead
+        # of allocating a fresh ``zeros`` tensor in every layer. Allocating it
+        # with the builder also makes its address available before CUDA Graph
+        # warmup; the metadata build narrows the view to this step's rows.
+        self.index_topk = int(
+            getattr(self.vllm_config.model_config.hf_config, "index_topk", 512)
+        )
+        self.decode_topk_allreduce_buffer = (
+            torch.empty(
+                (
+                    scheduler_config.max_num_batched_tokens,
+                    self.index_topk,
+                ),
+                dtype=torch.float32,
+                device=self.device,
+            )
+            if self.indexer_shard_size > 1 and self.decode_shard_min_reqs > 0
+            else None
+        )
 
         next_n = self.num_speculative_tokens + 1
         self.decode_threshold = next_n
@@ -1028,20 +1094,6 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
         self.scheduler_metadata_buffer = torch.empty(
             (self.num_sms + 1, 2), dtype=torch.int32, device=self.device
         )
-
-        # KV compression. Default to 1 for no compression.
-        self.compress_ratio = 1
-        # Get compress_ratio for DeepseekV4 support
-        if isinstance(self.kv_cache_spec, MLAAttentionSpec):
-            # MLA compression is a whole number of tokens per state (fractions
-            # are whisper block pooling and never reach MLA).
-            assert isinstance(self.kv_cache_spec.tokens_per_state, int)
-            self.compress_ratio = self.kv_cache_spec.tokens_per_state
-        if self.dcp_world_size > 1 and self.compress_ratio > 1:
-            raise NotImplementedError(
-                "DCP is not supported with sparse indexer KV compression "
-                f"(compress_ratio={self.compress_ratio})."
-            )
 
         # Pre-allocate buffers for CUDA graph compatibility when
         if self.compress_ratio > 1:
@@ -1626,6 +1678,11 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                 per_req_decode_lens=self.per_req_decode_lens_buffer[:num_decodes],
                 decode_is_uniform=write_is_uniform,
                 write_max_decode_len=max_decode_len,
+                topk_allreduce_buffer=(
+                    None
+                    if self.decode_topk_allreduce_buffer is None
+                    else self.decode_topk_allreduce_buffer[: batch_size * next_n]
+                ),
             )
 
         attn_metadata = DeepseekV32IndexerMetadata(

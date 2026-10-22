@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Adapted from vLLM's mqa_logits_triton.py; sparse selection follows SGLang #38944.
-"""SM80 candidate-only index logits, preserving the dense logical-column ABI."""
+"""SM80 candidate-only index logits.
+
+The dense entry point preserves vLLM's logical-column ABI.  The compact entry
+point is an opt-in experiment: it emits only the selected candidate blocks so
+the caller can use the same persistent top-k kernel on a much narrower row.
+"""
 
 import torch
-
 from vllm.triton_utils import tl, triton
 from vllm.v1.attention.ops.mqa_logits_triton import _get_e4m3fn_bf16_lut
 
@@ -16,7 +20,7 @@ def _candidate_logits(
     stride_tr, stride_tc, stride_cr, stride_cc, stride_or,
     width, NC: tl.constexpr, H: tl.constexpr, D: tl.constexpr,
     PAGE: tl.constexpr, CB: tl.constexpr, BH: tl.constexpr, BD: tl.constexpr,
-    BN: tl.constexpr,
+    BN: tl.constexpr, COMPACT: tl.constexpr,
 ):
     row = tl.program_id(0).to(tl.int64)
     offsets = tl.program_id(1) * BN + tl.arange(0, BN)
@@ -40,7 +44,10 @@ def _candidate_logits(
     weight = tl.load(W + row * stride_wr + hh * stride_wh, hh < H, 0.0)
     scores = tl.where(scores > 0, scores, 0.0) * weight[:, None]
     result = tl.sum(scores, 0)
-    tl.store(OUT + row * stride_or + position, result, valid)
+    # Compact rows are laid out in candidate order.  The caller maps the
+    # returned offsets back to logical compressed-KV positions after top-k.
+    out_col = cid * CB + offsets % CB if COMPACT else position
+    tl.store(OUT + row * stride_or + out_col, result, valid)
 
 
 def candidate_mqa_logits(q: torch.Tensor, kv: torch.Tensor, weights: torch.Tensor,
@@ -67,6 +74,88 @@ def candidate_mqa_logits(q: torch.Tensor, kv: torch.Tensor, weights: torch.Tenso
         *table.stride(), *candidates.stride(), output.stride(0),
         width, candidates.shape[1], heads, dimension, page, candidate_block_size,
         max(16, triton.next_power_of_2(heads)), triton.next_power_of_2(dimension), 64,
-        num_warps=4, num_stages=2,
+        num_warps=4, num_stages=2, COMPACT=False,
     )
     return output
+
+
+def candidate_mqa_logits_compact(
+    q: torch.Tensor,
+    kv: torch.Tensor,
+    weights: torch.Tensor,
+    lengths: torch.Tensor,
+    table: torch.Tensor,
+    candidates: torch.Tensor,
+    width: int,
+    candidate_block_size: int = 8,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return candidate scores in a narrow row plus logical positions.
+
+    ``candidates`` is sorted by logical block id before launch.  This keeps
+    persistent top-k's lower-index tie rule aligned with the dense ABI while
+    retaining the candidate-only memory traffic.  The path is deliberately
+    opt-in because the compact kernel uses a separate numerical reduction from
+    the dense MQA kernel and must pass the batch-invariant quality gate first.
+    """
+    rows, next_n, heads, dimension = q.shape
+    assert next_n == 1 and lengths.shape == (rows, 1)
+    assert candidates.shape[0] == rows and candidate_block_size == 8
+    assert q.dtype == torch.float8_e4m3fn and kv.dtype == torch.uint8
+    assert torch.cuda.get_device_capability(q.device) == (8, 0)
+    blocks, page, one, packed_dimension = kv.shape
+    assert one == 1 and packed_dimension == dimension + 4
+
+    # The candidate selector normally returns score order.  Sorting this small
+    # block-id matrix makes equal-score positions deterministic and avoids
+    # changing the persistent-top-k ABI when the compact arm is enabled.
+    candidates = torch.sort(candidates.to(torch.int32), dim=1).values
+    flat = kv.view(blocks, -1)
+    key_bytes = flat[:, : page * dimension].as_strided(
+        (blocks, page, dimension), (flat.stride(0), dimension, 1)
+    )
+    scales = flat[:, page * dimension :].view(torch.float32)
+    lut = _get_e4m3fn_bf16_lut(q.device)
+    query = lut.index_select(
+        0, q.view(torch.uint8).reshape(-1).to(torch.int32)
+    ).view(rows, heads, dimension)
+    compact_width = candidates.shape[1] * candidate_block_size
+    scores = torch.full(
+        (rows, compact_width), -float("inf"), device=q.device, dtype=torch.float32
+    )
+    _candidate_logits[(rows, triton.cdiv(compact_width, 64))](
+        query,
+        key_bytes,
+        scales,
+        weights,
+        lut,
+        lengths,
+        table,
+        candidates,
+        scores,
+        *query.stride(),
+        *key_bytes.stride(),
+        *scales.stride(),
+        *weights.stride(),
+        lengths.stride(0),
+        *table.stride(),
+        *candidates.stride(),
+        scores.stride(0),
+        width,
+        candidates.shape[1],
+        heads,
+        dimension,
+        page,
+        candidate_block_size,
+        max(16, triton.next_power_of_2(heads)),
+        triton.next_power_of_2(dimension),
+        64,
+        num_warps=4,
+        num_stages=2,
+        COMPACT=True,
+    )
+    offsets = torch.arange(candidate_block_size, device=q.device)
+    positions = (
+        candidates.unsqueeze(-1) * candidate_block_size + offsets
+    ).reshape(rows, compact_width)
+    positions.masked_fill_(positions < 0, -1)
+    return scores, positions

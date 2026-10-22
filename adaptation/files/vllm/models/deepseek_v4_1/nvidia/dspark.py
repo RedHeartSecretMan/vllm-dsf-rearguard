@@ -271,7 +271,12 @@ def _insert_context_kv(
     cos_sin_cache = attn.rotary_emb.cos_sin_cache
     cache_dtype = swa_cache.dtype
     n_ctx = kv.shape[0]
-    dummy_q = torch.zeros(
+    # The fused insert operators write the Q result into this buffer, but the
+    # DSpark context path discards that result: only the RoPE/quantized KV
+    # insert is consumed.  Avoid a full-device memset for every context layer.
+    # At 1M context this temporary is several GiB on SM80, so zero-initializing
+    # it needlessly adds a large HBM write before the fused kernel runs.
+    dummy_q = torch.empty(
         (n_ctx, attn.n_local_heads, attn.head_dim),
         dtype=kv.dtype,
         device=kv.device,
@@ -305,7 +310,7 @@ def _insert_context_kv(
     else:  # per-tensor fp8 (torch.float8_e4m3fn)
         # TODO(ben): double-check if this is being dispatched correctly for FI backend
         swa_3d = swa_cache.view(-1, block_size, attn.head_dim)
-        dummy_q_fp8 = torch.zeros_like(dummy_q, dtype=torch.float8_e4m3fn)
+        dummy_q_fp8 = torch.empty_like(dummy_q, dtype=torch.float8_e4m3fn)
         torch.ops._C.fused_deepseek_v4_qnorm_rope_kv_rope_full_cache_fp8_insert(
             dummy_q,
             kv,

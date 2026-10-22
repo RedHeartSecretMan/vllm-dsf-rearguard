@@ -143,7 +143,7 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(
             a["parallel"]["max_global_seqs"], b["parallel"]["max_global_seqs"]
         )
-        for plan, per_rank in ((a, "64"), (b, "32")):
+        for plan, per_rank in ((a, "256"), (b, "128")):
             command = plan["command"]
             self.assertEqual(command[command.index("--max-num-seqs") + 1], per_rank)
             self.assertIn(launch.MODEL_NAME, command)
@@ -162,10 +162,17 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(baseline["experimental"], [])
         for variable in launch.EXPERIMENTS.values():
             self.assertIn(variable + "=0", baseline["command"])
+        self.assertIn("VLLM_DSV4_LOGITS_ROW_CHUNK=0", baseline["command"])
         changed = self.plan("--experimental", "ragged-reuse")
         self.assertEqual(changed["experimental"], ["ragged-reuse"])
         self.assertIn("VLLM_DSV41_REUSE_TOPK_RAGGED=1", changed["command"])
         self.assertIn("VLLM_DSV41_STACKED_DRAFT_KV=0", changed["command"])
+        bounded = self.plan(
+            "--context", "1048576", "--experimental", "bounded-prefill"
+        )
+        self.assertIn("VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE=1", bounded["command"])
+        row_chunk = self.plan("--logits-row-chunk", "512")
+        self.assertIn("VLLM_DSV4_LOGITS_ROW_CHUNK=512", row_chunk["command"])
         with self.assertRaisesRegex(ValueError, "requires DSpark"):
             self.plan("--dspark", "0", "--experimental", "stacked-kv")
 

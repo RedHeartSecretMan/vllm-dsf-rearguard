@@ -16,6 +16,8 @@ EXPERIMENTS = {
     "decode-metadata": "VLLM_DSV41_DECODE_METADATA_FASTPATH",
     "ragged-reuse": "VLLM_DSV41_REUSE_TOPK_RAGGED",
     "stacked-kv": "VLLM_DSV41_STACKED_DRAFT_KV",
+    "bounded-prefill": "VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE",
+    "prefill-throttle": "VLLM_DSV41_PREFILL_THROTTLE",
 }
 
 
@@ -52,6 +54,7 @@ def make_plan(args):
     if args.chunk < per_rank * (args.dspark + 1):
         raise ValueError("Chunk budget is too small for speculative decode")
     env = json.loads((ROOT / "config/runtime/environment.json").read_text())
+    env["VLLM_DSV4_LOGITS_ROW_CHUNK"] = str(args.logits_row_chunk)
     selected = set(args.experimental)
     if "stacked-kv" in selected and not args.dspark:
         raise ValueError("stacked-kv requires DSpark")
@@ -223,9 +226,16 @@ def parser():
         "--context", type=int, choices=(262144, 524288, 1048576), default=262144
     )
     p.add_argument(
-        "--max-seqs", type=int, default=64, help="Global budget across both DP ranks"
+        "--max-seqs", type=int, default=256, help="Global budget across both DP ranks"
     )
-    p.add_argument("--chunk", type=int, default=8192)
+    p.add_argument("--chunk", type=int, default=16384)
+    p.add_argument(
+        "--logits-row-chunk",
+        type=int,
+        choices=(0, 128, 256, 512, 1024, 2048),
+        default=0,
+        help="Opt-in SM80 prefill logits row chunk; 0 keeps the monolithic path",
+    )
     p.add_argument("--memory", type=float, default=0.90)
     p.add_argument("--kernels", choices=("control", "optimized"), default="optimized")
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")

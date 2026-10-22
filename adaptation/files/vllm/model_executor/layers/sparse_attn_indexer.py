@@ -5,7 +5,6 @@
 import os
 
 import torch
-
 import vllm.envs as envs
 from vllm import _custom_ops as ops
 from vllm._aiter_ops import rocm_aiter_ops
@@ -149,6 +148,7 @@ def _all_reduce_decode_topk(
     row_lo: int,
     row_hi: int,
     max_index: int,
+    scratch: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Reassemble the decode top-k from every rank's owned rows, under capture.
 
@@ -178,11 +178,22 @@ def _all_reduce_decode_topk(
     fused Markov step safe with the same exchange, and it is what makes this
     one safe.
     """
-    scattered = torch.zeros(
-        (num_padded_tokens, topk_tokens),
-        dtype=torch.float32,
-        device=topk_indices_buffer.device,
-    )
+    if scratch is None:
+        # Keep the helper usable by older callers and CPU tests.  The normal
+        # query-sharded path passes the persistent builder buffer below,
+        # avoiding this allocator once per indexer layer.
+        scattered = torch.zeros(
+            (num_padded_tokens, topk_tokens),
+            dtype=torch.float32,
+            device=topk_indices_buffer.device,
+        )
+    else:
+        if scratch.ndim != 2 or scratch.shape[0] < num_padded_tokens:
+            raise ValueError("top-k all-reduce scratch buffer is too small")
+        if scratch.shape[1] < topk_tokens:
+            raise ValueError("top-k all-reduce scratch width is too small")
+        scattered = scratch[:num_padded_tokens, :topk_tokens]
+        scattered.zero_()
     scattered[row_lo:row_hi] = topk_indices_buffer[row_lo:row_hi, :topk_tokens]
     reduced = tensor_model_parallel_all_reduce(scattered)
     topk_indices_buffer[:num_padded_tokens, :topk_tokens] = reduced.clamp_(
@@ -821,7 +832,58 @@ def sparse_attn_indexer(
             and candidate_block_size == 8 and next_n == 1
             and decode_metadata.max_seq_len >= 32768
         )
-        if candidate_logits_used:
+        candidate_compact_used = (
+            candidate_logits_used
+            and os.environ.get("VLLM_SM80_CANDIDATE_MQA_COMPACT") == "1"
+        )
+        if candidate_compact_used:
+            from vllm.v1.attention.ops.candidate_mqa_sm80 import (
+                candidate_mqa_logits_compact,
+            )
+
+            logger.info_once(
+                "SM80 compact candidate-only MQA logits enabled for flattened decode"
+            )
+            compact_scores, compact_positions = candidate_mqa_logits_compact(
+                padded_q_quant_cast,
+                kv_cache,
+                shard_weights,
+                seq_lens,
+                block_table,
+                candidate_blocks[row_lo:row_hi],
+                decode_metadata.max_seq_len,
+                candidate_block_size,
+            )
+            topk_indices = topk_indices_buffer[row_lo:row_hi, :topk_tokens]
+            topk_indices.fill_(-1)
+            compact_width = compact_scores.shape[1]
+            compact_lens = seq_lens.reshape(-1).clamp_max(compact_width)
+            workspace_manager = current_workspace_manager()
+            (topk_workspace,) = workspace_manager.get_simultaneous(
+                ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
+            )
+            compact_k = min(topk_tokens, compact_width)
+            torch.ops._C.persistent_topk(
+                compact_scores,
+                compact_lens,
+                topk_indices[:, :compact_k],
+                topk_workspace,
+                compact_k,
+                compact_width,
+            )
+            compact_order = topk_indices[:, :compact_k]
+            compact_selected = torch.gather(
+                compact_positions, 1, compact_order.clamp_min(0)
+            ).to(dtype=topk_indices.dtype)
+            compact_selected.masked_fill_(
+                compact_order < 0, -1
+            )
+            topk_indices[:, :compact_k].copy_(compact_selected)
+            # The compact arm has already completed top-k.  Keep the narrow
+            # score tensor only for the optional DCP guard below; this arm is
+            # currently ineligible for DCP because candidates are request-local.
+            logits = compact_scores
+        elif candidate_logits_used:
             from vllm.v1.attention.ops.candidate_mqa_sm80 import candidate_mqa_logits
 
             logger.info_once("SM80 candidate-only MQA logits enabled for flattened decode")
@@ -870,96 +932,94 @@ def sparse_attn_indexer(
                 max_model_len=decode_metadata.max_seq_len,
                 clean_logits=False,
             )
-        num_rows = logits.shape[0]
-        if candidate_blocks is not None and not candidate_logits_used:
-            # Two-level selection (v4.1) on the decode logits; columns are
-            # request-local compressed positions. seq_lens is (B, next_n)
-            # for native spec decode (per-row effective lens) and (B, 1)
-            # otherwise. Under TP decode-sharding the logits hold only this
-            # rank's rows [row_lo, row_hi), and seq_lens was sliced to match.
-            vis = seq_lens.reshape(-1)
-            row_repeat = next_n if vis.numel() != num_rows else 1
-            vis = vis[:num_rows]
-            decode_candidates = candidate_blocks[row_lo:row_hi]
-            if candidate_write:
-                _select_candidate_blocks(
+        if not candidate_compact_used:
+            num_rows = logits.shape[0]
+            if candidate_blocks is not None and not candidate_logits_used:
+                # Two-level selection (v4.1) on the decode logits; columns are
+                # request-local compressed positions. seq_lens is (B, next_n)
+                # for native spec decode (per-row effective lens) and (B, 1)
+                # otherwise. Under TP decode-sharding the logits hold only this
+                # rank's rows [row_lo, row_hi), and seq_lens was sliced to match.
+                vis = seq_lens.reshape(-1)
+                row_repeat = next_n if vis.numel() != num_rows else 1
+                vis = vis[:num_rows]
+                decode_candidates = candidate_blocks[row_lo:row_hi]
+                if candidate_write:
+                    _select_candidate_blocks(
+                        logits,
+                        None,
+                        vis,
+                        decode_candidates.shape[1],
+                        candidate_block_size,
+                        decode_candidates,
+                        row_repeat,
+                    )
+                else:
+                    _apply_candidate_mask(
+                        logits,
+                        None,
+                        vis,
+                        decode_candidates,
+                        candidate_block_size,
+                        row_repeat,
+                    )
+            topk_indices = topk_indices_buffer[row_lo:row_hi, :topk_tokens]
+
+            # Keyed on the batch's row count, not this rank's: a shard must not
+            # pick a different top-k kernel than the replicated path would, and
+            # a batch that fits the cooperative kernel fits it on any shard.
+            use_cooperative_topk = (
+                current_platform.is_cuda()
+                and topk_tokens in (512, 1024, 2048)
+                and num_padded_tokens <= 64
+                and logits.stride(0) % 4 == 0  # TMA 16-byte alignment
+                and current_platform.has_device_capability(90)
+                and not current_platform.is_device_capability_family(120)
+            )
+            # Deliberately NOT capability-gated, unlike the cooperative path
+            # above: persistent_topk is the portable non-cluster kernel.
+            use_persistent_topk = current_platform.is_cuda() and topk_tokens in (
+                512,
+                1024,
+                2048,
+            )
+            if use_cooperative_topk:
+                workspace_manager = current_workspace_manager()
+                (topk_workspace,) = workspace_manager.get_simultaneous(
+                    ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
+                )
+                torch.ops._C.cooperative_topk(
                     logits,
-                    None,
-                    vis,
-                    decode_candidates.shape[1],
-                    candidate_block_size,
-                    decode_candidates,
-                    row_repeat,
+                    seq_lens,
+                    topk_indices,
+                    topk_workspace,
+                    topk_tokens,
+                    attn_metadata_narrowed.max_seq_len,
+                )
+            elif use_persistent_topk:
+                workspace_manager = current_workspace_manager()
+                (topk_workspace,) = workspace_manager.get_simultaneous(
+                    ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
+                )
+                torch.ops._C.persistent_topk(
+                    logits,
+                    seq_lens,
+                    topk_indices,
+                    topk_workspace,
+                    topk_tokens,
+                    logits.shape[1],
                 )
             else:
-                _apply_candidate_mask(
+                ops.top_k_per_row_decode(
                     logits,
-                    None,
-                    vis,
-                    decode_candidates,
-                    candidate_block_size,
-                    row_repeat,
+                    next_n,
+                    seq_lens,
+                    topk_indices,
+                    num_rows,
+                    logits.stride(0),
+                    logits.stride(1),
+                    topk_tokens,
                 )
-        topk_indices = topk_indices_buffer[row_lo:row_hi, :topk_tokens]
-
-        # Keyed on the batch's row count, not this rank's: a shard must not
-        # pick a different top-k kernel than the replicated path would, and a
-        # batch that fits the cooperative kernel fits it on any shard of itself.
-        use_cooperative_topk = (
-            current_platform.is_cuda()
-            and topk_tokens in (512, 1024, 2048)
-            and num_padded_tokens <= 64
-            and logits.stride(0) % 4 == 0  # TMA 16-byte alignment
-            and current_platform.has_device_capability(90)
-            and not current_platform.is_device_capability_family(120)
-        )
-        # Deliberately NOT capability-gated, unlike the cooperative path
-        # above: persistent_topk is the portable non-cluster kernel. An SM8x
-        # corruption report (#50576) traced to a third-party vendored kernel,
-        # not this tree's topk.cu; regression coverage:
-        # tests/kernels/test_persistent_topk_band.py.
-        use_persistent_topk = current_platform.is_cuda() and topk_tokens in (
-            512,
-            1024,
-            2048,
-        )
-        if use_cooperative_topk:
-            workspace_manager = current_workspace_manager()
-            (topk_workspace,) = workspace_manager.get_simultaneous(
-                ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
-            )
-            torch.ops._C.cooperative_topk(
-                logits,
-                seq_lens,
-                topk_indices,
-                topk_workspace,
-                topk_tokens,
-                attn_metadata_narrowed.max_seq_len,
-            )
-        elif use_persistent_topk:
-            workspace_manager = current_workspace_manager()
-            (topk_workspace,) = workspace_manager.get_simultaneous(
-                ((RADIX_TOPK_WORKSPACE_SIZE,), torch.uint8),
-            )
-            torch.ops._C.persistent_topk(
-                logits,
-                seq_lens,
-                topk_indices,
-                topk_workspace,
-                topk_tokens,
-                logits.shape[1],
-            )
-        else:
-            ops.top_k_per_row_decode(
-                logits,
-                next_n,
-                seq_lens,
-                topk_indices,
-                num_rows,
-                logits.stride(0),
-                logits.stride(1),
-                topk_tokens,
-            )
 
         if decode_metadata.global_seq_lens is not None:
             _merge_dcp_topk_global(
@@ -979,6 +1039,7 @@ def sparse_attn_indexer(
                 row_lo,
                 row_hi,
                 decode_metadata.max_seq_len,
+                decode_metadata.topk_allreduce_buffer,
             )
 
         if decode_metadata.requires_padding:

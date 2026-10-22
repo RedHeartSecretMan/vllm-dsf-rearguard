@@ -57,7 +57,7 @@
     {
       "path": "vllm/model_executor/layers/sparse_attn_indexer.py",
       "base_sha256": "fb063e263c21b2aed10abf23c3db0d68756a90973b8f3731e61cf3cb615bec3f",
-      "patched_sha256": "a5ff80ba21cedef5cbbf4572ad40db24d2b47e331fb08846751b0882587a91d8",
+      "patched_sha256": "ec5a00c5bdc9ed47e5bca110b0ae5fb816a556a48c6d6e64366df1a42f7dcf17",
       "stage": "base_integration"
     },
     {
@@ -87,7 +87,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/attention.py",
       "base_sha256": "991af78c9eda16a0f829ecba57397b2a434335dfecbbd93fff1dc40cbbb92698",
-      "patched_sha256": "1dcbfc69f3d80a742038cc305cc829e4c2eed5cc7a6c53d77e3b45eb039c4228",
+      "patched_sha256": "e2e7f4adb5fdba7b075c97962c4ed2aeac0b8ddc906fb41a7ef77b8f7a951a49",
       "stage": "model_support"
     },
     {
@@ -99,7 +99,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/dspark.py",
       "base_sha256": "7645489aea921148c9bfb5a0b18e3f9073af1b10b0d51a7b70a881bd848038bf",
-      "patched_sha256": "8bbd29dc3a7f19d60c3fc4623bafd80cce85a1ba63bb8d064f4105cf3a143bdf",
+      "patched_sha256": "e758ec10023e2abb73f8963fa9a7453ad2986e3468235ae854bba1f1fcb7f2e4",
       "stage": "sm80_acceleration"
     },
     {
@@ -159,7 +159,7 @@
     {
       "path": "vllm/v1/attention/backends/mla/indexer.py",
       "base_sha256": "b2b4ddb0cdb1368647329e848123c628d64d8ef67493cc7772d1754d75755e92",
-      "patched_sha256": "1af391f34f61e627b5cd86562ac81d0edb26a942ac714cbb9e708fb0794d1466",
+      "patched_sha256": "416f15c743a891d8bcb4f5f51a5b8a686ce7d2ec04a1e4e286b74cf2eed53788",
       "stage": "sm80_acceleration"
     },
     {
@@ -171,7 +171,7 @@
     {
       "path": "vllm/v1/attention/ops/candidate_mqa_sm80.py",
       "base_sha256": null,
-      "patched_sha256": "3cd9b70a41253a5808beb4a09dfe98f88bb103fa9b7f9863df44e449259c456f",
+      "patched_sha256": "9158082d10d334af8af29f3a9cfb3db3e70290f0330a700ed494be3f209afb49",
       "stage": "base_integration"
     },
     {
@@ -183,7 +183,7 @@
     {
       "path": "vllm/v1/core/sched/scheduler.py",
       "base_sha256": "5ef33e44cebc274bca239cc4337ad1370298fd369660b025ca98eec48c4cc015",
-      "patched_sha256": "d62c42b26ca6c7a12a6b24515fbe16f8973c0b1db9159dee71de573343555841",
+      "patched_sha256": "d366f17eb0b569e4ad90d8776dfa9dfbbc88e8fc4b60d122e1f792f7a29756fb",
       "stage": "model_support"
     },
     {
