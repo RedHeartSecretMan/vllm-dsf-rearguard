@@ -1,31 +1,13 @@
-DeepSeek-V4.1-Flash-1017 on 8x NVIDIA A100 SXM4 80GB
+DeepSeek V4.1 Flash A100
+Copyright 2026 RedHeartSecretMan.
 
-Project-specific launch, model verification and benchmark code:
-Copyright 2026 RedHeartSecretMan. Apache-2.0.
+The vLLM adaptation sources retain their original Apache-2.0 SPDX headers and
+copyright notices. The base runtime and its dependencies keep their own
+licenses; see the pinned source and image records in manifests/sources.json.
 
-SM80 adaptation source files and configuration are retained from
-Tokha233/deepseek-v4.1-flash-a100-turbo at
-fae324ae62ac5cef31b7d38f5d369618e1cae1fa, Apache-2.0.
-See adaptation/NOTICE and adaptation/LICENSE.
+The official DeepSeek encoder, image reference and related fixtures are used
+under the DeepSeek MIT license in licenses/DeepSeek-LICENSE.
 
-1017 model encoding, renderer and vision adaptations, parity tests and synthetic vision
-fixtures derive from keplerzip/deepseek-v4.1-flash-1017-a100 at
-fb846337b3c580d885641e23fe5d201725735010, Apache-2.0.
-The installer manifest is bound to the fixed runtime source bytes.
-File-level attribution remains in the source headers and manifests.
-
-vLLM and wtdcode/vllm-backport retain their original SPDX and copyright notices.
-Base source: a350766628514d597670d2a5217777fdee2ba7f4.
-Public container digest is pinned in Dockerfile and manifests/sources.json.
-
-DeepSeek official encoder reference and model: DeepSeek-AI, MIT.
-See licenses/DeepSeek-LICENSE. The encoder reference is from ModelScope revision
-f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad and its SHA256 was independently checked.
-Weights and runtime images are not redistributed by this repository.
-Inherited runtime dependencies retain their respective licenses.
-
-Optional decode metadata, top-k reuse and stacked context KV ports additionally
-reference vLLM PRs #57885, #57434 and #57627, and keplerzip fb846337.
-Exact source commits and payload hashes are in adaptation/manifest.json.
-Official encoding input fixtures in tests/fixtures/official_encoding are DeepSeek-AI MIT
-sources from the same fixed ModelScope revision as the encoder reference.
+The adaptation also incorporates ideas and source-level changes from the
+projects and upstream changes listed in adaptation/manifest.json. Their
+original notices and licenses remain applicable to the corresponding files.
