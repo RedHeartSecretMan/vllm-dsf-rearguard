@@ -9,6 +9,11 @@ import time
 from pathlib import Path
 
 from scripts.benchmark import MODEL, json_request, verify_endpoint
+from scripts.quality_metrics import (
+    aggregate_speculative,
+    speculative_metrics,
+    text_sha256,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +42,23 @@ def repetitive(text):
         len(set(words[-n:])) > 1 and words[-n:] * 4 == words[-4 * n :]
         for n in range(2, min(33, len(words) // 4 + 1))
     )
+
+
+def response_digest(message):
+    """Hash all assistant-visible output, including structured tool calls."""
+
+    parts = []
+    if message.get("reasoning_content"):
+        parts.append("<reasoning>" + message["reasoning_content"])
+    if message.get("content"):
+        parts.append(message["content"])
+    if message.get("tool_calls"):
+        parts.append(
+            "<tool_calls>"
+            + json.dumps(message["tool_calls"], sort_keys=True, separators=(",", ":"))
+        )
+    text = "".join(parts)
+    return {"sha256": text_sha256(text), "chars": len(text)}
 
 
 def cases(vision):
@@ -222,6 +244,7 @@ def main():
     if args.needle_tokens:
         suite.append(needle_case(args.base_url, args.needle_tokens))
     rows = []
+    speculative_rows = []
     args.output.parent.mkdir(parents=True, exist_ok=True)
     for case in suite:
         row = {"name": case["name"], "status": "FAIL"}
@@ -243,6 +266,11 @@ def main():
             row["response"] = result
             choice = result["choices"][0]
             message = choice["message"]
+            row["output"] = response_digest(message)
+            row["speculative"] = speculative_metrics(
+                result.get("usage"), result.get("metrics"), result.get("speculative")
+            )
+            speculative_rows.append(row)
             if choice["finish_reason"] == "length":
                 raise ValueError("Truncated generation")
             if repetitive(
@@ -295,6 +323,7 @@ def main():
                 "scope": "Small deterministic smoke suite only; no whole-model quality equivalence claim",
                 "launch": launch,
                 "runtime": runtime,
+                "speculative": aggregate_speculative(speculative_rows),
                 "cases": rows,
             },
             indent=2,

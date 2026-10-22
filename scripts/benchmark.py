@@ -3,15 +3,14 @@
 import argparse
 import hashlib
 import json
-import math
-import os
 import random
 import subprocess
 import time
 import urllib.parse
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from scripts.benchmark_common import json_request, percentile, request
 
 MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
 
@@ -58,29 +57,6 @@ def verify_endpoint(base, launch):
         "started_at": container["State"]["StartedAt"],
         "image_id": container["Image"],
     }
-
-
-def request(base, path, body=None, timeout=1800):
-    headers = {"Content-Type": "application/json"}
-    if os.environ.get("BENCH_API_KEY"):
-        headers["Authorization"] = "Bearer " + os.environ["BENCH_API_KEY"]
-    return urllib.request.urlopen(
-        urllib.request.Request(
-            base.rstrip("/") + path,
-            data=None if body is None else json.dumps(body).encode(),
-            headers=headers,
-        ),
-        timeout=timeout,
-    )
-
-
-def json_request(base, path, body=None, timeout=1800):
-    with request(base, path, body, timeout) as response:
-        return json.load(response)
-
-
-def percentile(values, p):
-    return sorted(values)[max(0, math.ceil(len(values) * p) - 1)] if values else None
 
 
 def consume_sse(response, started, timeout, clock=time.perf_counter):
@@ -172,7 +148,7 @@ def main():
     )
     p.add_argument("--output-tokens", type=int, default=1024)
     p.add_argument(
-        "--concurrency", type=int, choices=(1, 8, 32, 64, 128), required=True
+        "--concurrency", type=int, choices=(1, 8, 32, 64, 128, 256), required=True
     )
     p.add_argument("--requests", type=int, help="Defaults to 2x concurrency, minimum 8")
     p.add_argument("--cache", choices=("cold", "warm"), required=True)
