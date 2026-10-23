@@ -69,14 +69,20 @@ def custom_tool_names(tools: list[Tool] | None) -> frozenset[str]:
     return frozenset(names)
 
 
-def decode_custom_tool_input(arguments: str) -> str:
-    try:
-        payload = json.loads(arguments)
-    except ValueError:
-        return arguments
-    if isinstance(payload, dict) and isinstance(payload.get("input"), str):
-        return payload["input"]
-    return arguments
+def decode_custom_tool_input(arguments: str | dict[str, Any]) -> str:
+    value: Any = arguments
+    for _ in range(2):
+        if not isinstance(value, str):
+            break
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            break
+    if isinstance(value, dict) and isinstance(value.get("input"), str):
+        return value["input"]
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
 
 
 def decode_custom_tool_input_prefix(arguments: str) -> str:

@@ -225,7 +225,7 @@
     {
       "path": "vllm/entrypoints/openai/responses/utils.py",
       "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
-      "patched_sha256": "8d4a3ef8062914fa3ca8bc3520a1c80247e2b283f07106b01290f5a1e98cf415",
+      "patched_sha256": "cb08c4cc617b00ce10ee944ecc44ac650a4395f8833e973c90315e3cabe2236f",
       "stage": "base_integration"
     },
     {

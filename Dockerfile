@@ -5,6 +5,7 @@ FROM ${BASE_IMAGE}
 COPY adaptation /opt/dsv41-a100/adaptation
 RUN python3 /opt/dsv41-a100/adaptation/install.py
 COPY launch.py /opt/dsv41-a100/launch.py
+COPY VERSION /opt/dsv41-a100/VERSION
 COPY scripts /opt/dsv41-a100/scripts
 COPY config /opt/dsv41-a100/config
 COPY tests /opt/dsv41-a100/tests
