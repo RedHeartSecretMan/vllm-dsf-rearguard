@@ -41,9 +41,11 @@ def _normalize_messages(
                     parts.append(block.get("text", ""))
                 elif part_type in ("image_url", "input_image", "image_pil"):
                     parts.append(IMAGE_PLACEHOLDER)
+                elif part_type in ("video_url", "input_video", "video"):
+                    parts.append(IMAGE_PLACEHOLDER)
                 else:
                     raise ValueError(
-                        "DeepSeek V4.1 supports text and image content only; "
+                        "DeepSeek V4.1 supports text, image, and video content; "
                         f"got {part_type!r}"
                     )
             message["content"] = "\n\n".join(parts)

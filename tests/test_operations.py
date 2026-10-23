@@ -56,14 +56,13 @@ class SourcePayloadTests(unittest.TestCase):
         self.assertEqual(
             stages,
             {
-                "base_integration": 21,
+                "base_integration": 27,
                 "model_support": 9,
                 "sm80_acceleration": 4,
             },
         )
         self.assertTrue(all((root / "adaptation/files" / row["path"]).is_file()
                             for row in files))
-
 
     def test_served_vllm_version_is_the_project_version(self):
         root = Path(__file__).resolve().parents[1]
@@ -163,6 +162,13 @@ class LaunchTests(unittest.TestCase):
             self.assertNotIn("--privileged", command)
             self.assertNotIn("stop", command)
             self.assertIn("127.0.0.1:8005:8000", command)
+
+    def test_multimodal_plan_uses_deployment_limits(self):
+        command = self.plan()["command"]
+        limit = json.loads(command[command.index("--limit-mm-per-prompt") + 1])
+        self.assertEqual(limit, {"image": 64, "video": {"count": 2, "num_frames": 32}})
+        media = json.loads(command[command.index("--media-io-kwargs") + 1])
+        self.assertEqual(media, {"video": {"num_frames": 32, "fps": 1}})
 
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with self.assertRaisesRegex(ValueError, "trained block"):

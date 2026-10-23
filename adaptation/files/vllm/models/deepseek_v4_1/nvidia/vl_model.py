@@ -81,6 +81,24 @@ class DeepseekV4VLImagePixelInputs(TensorSchema):
     types: Annotated[torch.Tensor, TensorShape("ns", dynamic_dims={"ns"})]
 
 
+class DeepseekV4VLVideoPixelInputs(TensorSchema):
+    """Frame batches for one or more videos.
+
+    The checkpoint has an image tower, so each video is represented as an
+    ordered list of sampled image frames.  The processor keeps one tensor per
+    video because frame counts can differ between requests.
+    """
+
+    # The vLLM multimodal batcher returns a tensor for one video and a list
+    # for a heterogeneous batch.  The service caps each request at one video,
+    # but accepting both forms keeps direct engine calls well-defined.
+    video_patches: torch.Tensor | list[torch.Tensor]
+    video_vit_grid: torch.Tensor | list[torch.Tensor]
+    video_llm_grid: torch.Tensor | list[torch.Tensor]
+    video_types: torch.Tensor | list[torch.Tensor]
+    video_timestamps: torch.Tensor | list[torch.Tensor]
+
+
 def _make_deepseek_v4_vl_weights_mapper(
     expert_dtype: str, linear_scale_name: str
 ) -> WeightsMapper:
@@ -131,7 +149,7 @@ class DeepseekV41ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, Supports
 
     @classmethod
     def get_placeholder_str(cls, modality: str, i: int) -> str | None:
-        if modality == "image":
+        if modality in ("image", "video"):
             return IMAGE_PLACEHOLDER
         raise ValueError(f"Unsupported modality: {modality!r}")
 
@@ -145,7 +163,7 @@ class DeepseekV41ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, Supports
 
         # The tower is always built; _mark_tower_model stubs it out
         # (StageMissingLayer, weights skipped) when the image limit is 0.
-        with self._mark_tower_model(vllm_config, {"image"}):
+        with self._mark_tower_model(vllm_config, {"image", "video"}):
             self.use_data_parallel = is_vit_use_data_parallel(config.vision_n_heads)
             self.vision = DeepseekV4ViT(config)
             self.aligner = DeepseekV4Aligner(config)
@@ -194,6 +212,20 @@ class DeepseekV41ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, Supports
             llm_grid=kwargs.pop("llm_grid"),
             types=kwargs.pop("types"),
             resolve_bindings={"p": self.config.vision_patch_size},
+        )
+
+    def _parse_and_validate_video_input(
+        self, **kwargs: object
+    ) -> DeepseekV4VLVideoPixelInputs | None:
+        video_patches = kwargs.pop("video_patches", None)
+        if video_patches is None:
+            return None
+        return DeepseekV4VLVideoPixelInputs(
+            video_patches=video_patches,
+            video_vit_grid=kwargs.pop("video_vit_grid"),
+            video_llm_grid=kwargs.pop("video_llm_grid"),
+            video_types=kwargs.pop("video_types"),
+            video_timestamps=kwargs.pop("video_timestamps"),
         )
 
     def _encode_image(
@@ -260,11 +292,73 @@ class DeepseekV41ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, Supports
             span_offset += span_len
         return tuple(embeds)
 
+    def _process_video_input(
+        self,
+        video_input: DeepseekV4VLVideoPixelInputs,
+    ) -> tuple[torch.Tensor, ...]:
+        def as_video_list(value: torch.Tensor | list[torch.Tensor]):
+            if isinstance(value, torch.Tensor):
+                # A batched multimodal field has a leading video dimension.
+                return [value] if value.ndim == 4 else list(value)
+            return value
+
+        video_patches = as_video_list(video_input.video_patches)
+        video_vit_grid = as_video_list(video_input.video_vit_grid)
+        video_llm_grid = as_video_list(video_input.video_llm_grid)
+        video_types = as_video_list(video_input.video_types)
+        embeds: list[torch.Tensor] = []
+        for patches, vit_grid, llm_grid, types in zip(
+            video_patches,
+            video_vit_grid,
+            video_llm_grid,
+            video_types,
+            strict=True,
+        ):
+            patches = patches.to(self.aligner.w1.weight.dtype)
+            frame_grids = vit_grid.tolist()
+            if self.use_data_parallel and get_tensor_model_parallel_world_size() > 1:
+                image_embeds_list = run_dp_sharded_vision_tower(
+                    self.vision, self.aligner, patches, frame_grids
+                )
+            else:
+                image_embeds_list = []
+                vit_offset = 0
+                for n_vit_h, n_vit_w in frame_grids:
+                    n_vit = n_vit_h * n_vit_w
+                    image_embeds_list.append(
+                        self._encode_image(
+                            patches[vit_offset : vit_offset + n_vit],
+                            n_vit_h,
+                            n_vit_w,
+                        )
+                    )
+                    vit_offset += n_vit
+
+            span_offset = 0
+            video_embeds: list[torch.Tensor] = []
+            for image_embeds, (n_llm_h, n_llm_w) in zip(
+                image_embeds_list, llm_grid.tolist(), strict=True
+            ):
+                span_len = n_llm_h * (n_llm_w + 1) + 2
+                video_embeds.append(
+                    self._build_image_span(
+                        image_embeds,
+                        types[span_offset : span_offset + span_len],
+                    )
+                )
+                span_offset += span_len
+            embeds.append(torch.cat(video_embeds))
+        return tuple(embeds)
+
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
         image_input = self._parse_and_validate_image_input(**kwargs)
-        if image_input is None:
-            return []
-        return self._process_image_input(image_input)
+        video_input = self._parse_and_validate_video_input(**kwargs)
+        embeds: list[torch.Tensor] = []
+        if image_input is not None:
+            embeds.extend(self._process_image_input(image_input))
+        if video_input is not None:
+            embeds.extend(self._process_video_input(video_input))
+        return tuple(embeds)
 
     def embed_input_ids(
         self,

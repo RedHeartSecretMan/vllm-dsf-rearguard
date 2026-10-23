@@ -212,7 +212,13 @@ def make_plan(args):
     if args.text_only:
         serve += ["--language-model-only"]
     else:
-        serve += ["--limit-mm-per-prompt", '{"image":4}', "--disable-chunked-mm-input"]
+        serve += [
+            "--limit-mm-per-prompt",
+            '{"image":64,"video":{"count":2,"num_frames":32}}',
+            "--media-io-kwargs",
+            '{"video":{"num_frames":32,"fps":1}}',
+            "--disable-chunked-mm-input",
+        ]
     if args.eager:
         serve += ["--enforce-eager"]
     command = [

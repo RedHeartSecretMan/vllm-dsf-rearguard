@@ -2,7 +2,7 @@
 
 面向 `8×A100-SXM4-80GB / NVSwitch` 的 DeepSeek-V4.1-Flash-1017 推理适配，提供统一的 vLLM 适配层、启动配置、验证工具和性能基准。
 
-项目实现了 1017 模型协议、原生图文输入、稀疏 MLA、FP8 KV cache、DSpark 投机解码、CUDA Graph 和 EP8 通信路径等功能。适配源码位于 `adaptation/files/vllm/`，由 `adaptation/install.py` 在构建阶段校验后原子安装。
+项目实现了 1017 模型协议、Responses custom-tool 续轮、原生图文输入、实验性视频帧序列扩展、稀疏 MLA、FP8 KV cache、DSpark 投机解码、CUDA Graph 和 EP8 通信路径等功能。适配源码位于 `adaptation/files/vllm/`，由 `adaptation/install.py` 在构建阶段校验后原子安装。
 
 ## 快速开始
 
@@ -21,6 +21,8 @@ bash scripts/build.sh
 ```
 
 `launch.py` 不带 `--start` 时只打印启动计划。追加 `--start` 后会检查 GPU、已构建的镜像和完整的模型校验回执，全部通过后启动容器，服务绑定 `127.0.0.1:8005`，模型名为 `deepseek-ai/DeepSeek-V4.1-Flash-1017`，接口为 OpenAI 兼容的 `/v1`。
+
+多模态启动默认允许每个请求最多 64 张图片和 2 个视频。视频由 vLLM 按默认 1 FPS、最多 32 帧解码，再复用图像视觉塔；这属于服务侧扩展，不是模型官方的视频编码器。
 
 ## 推荐配置
 
@@ -55,7 +57,7 @@ python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 1
 | 单请求 Decode TPS | `279.5 token/s` |
 | GPQA Diamond，4 轮平均 | `91.54%` |
 
-测试配置、指标口径和完整数据见 [基准结果](docs/benchmarks.md)，验证范围见 [验证记录](docs/validation.md)，版本内容见 [发布说明](docs/release.md)。
+测试配置、指标口径和完整数据见 [基准结果](docs/benchmarks.md)，验证范围见 [验证记录](docs/validation.md)，版本内容见 [发布说明](docs/release.md)。Responses 协议 smoke 可运行 `python3 scripts/responses_smoke.py --help` 查看入口。
 
 ## 本地检查
 

@@ -5,9 +5,12 @@ import json
 import math
 import os
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import numpy as np
 
 from scripts.source_extract import load_functions
 
@@ -23,6 +26,24 @@ def functions(path, names, namespace=None):
 
 
 class VisionReferenceTests(unittest.TestCase):
+    def test_video_sampling_is_bounded_and_uses_decoder_timestamps(self):
+        source = FILES / "vllm/models/deepseek_v4_1/common/mm_preprocess.py"
+        functions = load_functions(
+            source,
+            ("sample_video_indices", "video_frame_timestamps"),
+            {"np": np, "Sequence": Sequence, "VIDEO_MAX_FRAMES": 32},
+            anywhere=True,
+        )
+        sample = functions["sample_video_indices"]
+        timestamps = functions["video_frame_timestamps"]
+        self.assertEqual(len(sample(60)), 32)
+        self.assertEqual(sample(60)[0], 0)
+        self.assertEqual(sample(60)[-1], 59)
+        self.assertEqual(
+            timestamps(3, {"frames_indices": [0, 10, 20], "fps": 10}),
+            [0.0, 1.0, 2.0],
+        )
+
     def test_reference_hash(self):
         manifest = json.loads((ADAPTATION / "manifest.json").read_text())
         self.assertEqual(

@@ -375,7 +375,8 @@ def find_last_user_index(messages: List[Dict[str, Any]]) -> int:
                 role == "user"
                 and content_blocks
                 and not any(
-                    block.get("type") in ("text", "image", "image_url")
+                    block.get("type")
+                    in ("text", "image", "image_url", "video", "video_url", "input_video")
                     for block in content_blocks
                 )
             ):
