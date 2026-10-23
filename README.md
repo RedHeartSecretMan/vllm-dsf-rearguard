@@ -59,9 +59,12 @@ python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 1
 
 ## 本地检查
 
+需要 CPU 版 PyTorch，和 CI 的检查一致：
+
 ```bash
-python3 -m unittest discover -s tests -p 'test_*.py' -v
-python3 -m compileall -q launch.py scripts adaptation config tests
+ruff check .
+python3 -m unittest discover -s tests -v
+CUDA_VISIBLE_DEVICES= python3 -m scripts.hotpaths.check
 ```
 
 `scripts/build.sh` 在无 GPU 的 `runc` 容器中执行安装、源码清单和 CPU 合约检查。
@@ -69,13 +72,14 @@ python3 -m compileall -q launch.py scripts adaptation config tests
 ## 项目结构
 
 ```text
-adaptation/   vLLM 源码覆盖、官方参考实现和安装清单
+adaptation/   vLLM 源码覆盖、编码器与图像处理器参考实现、安装清单
 config/       运行时环境变量与四类 benchmark 配置
-docs/         架构、基准、验证和发布说明
+docs/         架构、基准、验证和发布说明，以及原始回执
 manifests/    模型文件清单与基础镜像锁定
-scripts/      构建、校验、验收和性能工具
+scripts/      构建、校验、验收、基准、PPL 工具和 CPU 热路径检查（hotpaths/）
 tests/        CPU 合约、协议、视觉和 benchmark 测试
 launch.py     启动计划生成与服务启动入口
+ruff.toml     代码检查配置
 ```
 
 ## 许可证

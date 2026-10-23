@@ -37,7 +37,14 @@
 | 256 | 87.919 / 7.333 ms | 87.604 / 7.312 ms | 12.0× |
 | 1024 | 1341.594 / 28.453 ms | 1347.609 / 29.625 ms | 45.5–47.2× |
 
-结果仅覆盖 Python prompt 编码阶段，原始采样见 [目标机回执](evidence/encoding-benchmark.json)。
+结果仅覆盖 Python prompt 编码阶段，原始采样见 [目标机回执](evidence/encoding-benchmark.json)。复现时用 `scripts/bench_encoding.py` 对比两份编码器，`--baseline` 指向优化前的编码器文件，`--candidate` 默认是适配层里的 `deepseek_v41_encoding.py`，每组结果都会与 `adaptation/reference/encoder.py` 逐字比对：
+
+```bash
+python3 scripts/bench_encoding.py --baseline /path/to/baseline_encoder.py \
+  --output runtime/encoding-benchmark.json
+```
+
+回执里的 `baseline_sha256` 记录了测量时使用的基线文件。
 
 ### 长上下文与 decode 优化
 
@@ -63,7 +70,12 @@ python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 \
 
 `launch.py --kv-transfer-config` 接收 JSON 或 `@文件`，校验 connector 与 `kv_role` 后传入 vLLM。两个 CPU offload connector 的测试结果见 [排除实验](benchmarks.md#排除实验)。
 
-CPU 测试验证输出、地址、边界和变更输入，回执见 [CPU 热路径回执](evidence/hotpaths-cpu.json)。各开关的 GPU 启动、性能与精度结果分别见 [基准结果](benchmarks.md) 和 [验证记录](validation.md)。
+`scripts/hotpaths/check.py` 用 CPU 张量执行适配层里真实的 decode 元数据、ragged 复用、空 ragged pack 和 context 投影方法，需要 PyTorch，并要求 `CUDA_VISIBLE_DEVICES` 为空。加 `--native-loader` 会用镜像里的 vLLM 参数类检查 MXFP8 权重加载，只能在镜像内运行。检查在 CI 和镜像构建时都会执行，回执见 [CPU 热路径回执](evidence/hotpaths-cpu.json)：
+
+```bash
+CUDA_VISIBLE_DEVICES= python3 -m scripts.hotpaths.check --output runtime/hotpaths-cpu.json
+```
+各开关的 GPU 启动、性能与精度结果分别见 [基准结果](benchmarks.md) 和 [验证记录](validation.md)。
 
 ## 构建与启动安全
 

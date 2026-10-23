@@ -294,9 +294,9 @@ KV cache 增加后吞吐下降，继续使用 0.90。
 | `max-num-batched-tokens=32768` | 1M 配置，260K 冷 prefill | 31.17 s，+8.0% 耗时 | 性能没有提升 |
 | SM80 `logits-row-chunk=512` | 1M 配置，260K 冷 prefill | 30.98 s，+7.4% 耗时 | 性能没有提升 |
 | DSpark `dummy_q` 由 `zeros` 改为 `empty` | 1M 配置，260K 冷 prefill | 30.95 s，+7.3% 耗时 | 性能没有提升 |
-| TP8 代替 TP4DP2 | 1M 配置，260K 冷 prefill | 28.24 s，-2.1% 耗时 | 单流收益小，不采用 |
+| TP8 代替 TP4DP2 | 1M 配置，260K 冷 prefill | 28.24 s，-2.1% 耗时 | 性能没有提升 |
 | compact candidate-MQA | 1M 配置，C256，ISL 1024，OSL 128 | decode 1096.6 token/s，query-scratch 候选为 1158.9 token/s；输出摘要与 dense 路径不一致 | 不满足精度准入 |
 | compact candidate-MQA | 1M 配置，C256，ISL 16384 | 112/256 成功，失败率 56.25% | 不满足精度准入 |
 | `SimpleCPUOffloadConnector`，`cpu_bytes_to_use=8 GiB` | 1M 上限，未开启 `bounded-prefill`，启动后连续发送两个 ISL 1024 的随机请求 | 启动通过，每 rank 9320 个 CPU block（约 2 GiB）；请求返回 HTTP 500，dummy batch 阶段 worker 崩溃 | 请求失败 |
 | `OffloadingConnector`，`blocks_per_chunk=1` | 1M 上限，未开启 `bounded-prefill`，启动 | `tokens_per_block=8` 不能被 `tokens_per_hash=32` 整除 | 启动失败 |
-| 自适应 DSpark（`enable_adaptive_verification`） | 1M 配置，启动 | indexer backend 不支持在 device 上裁剪 verification 请求 | 启动失败，已移除入口 |
+| 自适应 DSpark（`enable_adaptive_verification`） | 1M 配置，启动 | indexer backend 不支持在 device 上裁剪 verification 请求 | 启动失败 |

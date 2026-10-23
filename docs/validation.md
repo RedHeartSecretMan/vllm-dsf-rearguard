@@ -9,7 +9,8 @@
 | 模型文件与权重校验 | `scripts/model_check.py` | 固定 ModelScope revision，83 个文件（含 48 个权重分片）大小与 SHA256 全部通过 |
 | 适配层原子安装 | `adaptation/install.py` | 34 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
 | 运行时源码复核 | `scripts/check_runtime.py` | 容器内已安装文件与源码清单指纹一致 |
-| CPU 合约与回归测试 | `unittest` | 97 项通过（2 项 PyTorch 运行时测试在纯 CPU 环境跳过） |
+| CPU 合约与回归测试 | `unittest` | 98 项全部通过 |
+| CPU 热路径检查 | `scripts/hotpaths/check.py` | 34 个用例全部通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影 |
 | 固定 digest 镜像构建 | `scripts/build.sh` | 镜像构建、runtime 校验与原生 MXFP8 loader 检查通过 |
 
 ## 协议与模型功能
@@ -29,6 +30,19 @@
 - 对文本、`reasoning_content`、结构化 `tool_calls`、工具续轮、图文和长上下文输出计算 SHA256 摘要。
 - 候选与基线的全部 case 均需通过且输出摘要一致，方可纳入默认推荐配置。
 - 当服务端返回 `draft_tokens` / `accepted_tokens` 计数时，`scripts/quality_metrics.py` 自动汇总投机解码接受率。
+
+对基线服务和候选服务各运行一次 `acceptance.py`，再用 `quality_gate.py` 比较两份结果。`--launch-receipt` 是 `launch.py --start` 写入 `runtime/<时间戳>/launch.json` 的启动回执，脚本据此确认被测服务就是回执里的容器：
+
+```bash
+python3 -m scripts.acceptance --launch-receipt runtime/<基线时间戳>/launch.json \
+  --output runtime/acceptance-baseline.json
+python3 -m scripts.acceptance --launch-receipt runtime/<候选时间戳>/launch.json \
+  --output runtime/acceptance-candidate.json
+python3 -m scripts.quality_gate --reference runtime/acceptance-baseline.json \
+  --candidate runtime/acceptance-candidate.json --output runtime/quality-gate.json
+```
+
+`--needle-tokens` 追加一个长上下文大海捞针用例，可选 1024、32768、131072、523000 或 1047000，且不能超过启动时的上下文上限。
 
 ## 全模型 PPL
 
