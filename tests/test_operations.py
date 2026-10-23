@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import launch
 from scripts import model_check
-from scripts.benchmark import consume_sse, percentile, verify_endpoint
+from scripts.bench_common import percentile, stream_metrics, verify_endpoint
 from scripts.check_runtime import expected_sources, fingerprint, require_matching_report
 
 
@@ -229,20 +229,20 @@ class StreamingMetricTests(unittest.TestCase):
             b'"prompt_tokens_details":{"cached_tokens":0}}}\n\n'
             b"data: [DONE]\n\n"
         )
-        result = consume_sse(stream, 0, 1000, clock=iter(range(1, 30)).__next__)
-        self.assertEqual(result["output_tokens"], 10)
-        self.assertEqual(result["content_chunks"], 2)
-        self.assertEqual(result["cached_tokens"], 0)
-        self.assertAlmostEqual(
-            result["stream_tpot_s"], result["stream_decode_span_s"] / 9
+        result = stream_metrics(
+            stream, 0, False, clock=iter(range(1, 30)).__next__
         )
+        self.assertEqual(result["output_tokens"], 10)
+        self.assertEqual(result["chunks"], 2)
+        self.assertEqual(result["cached_tokens"], 0)
+        self.assertAlmostEqual(result["tpot_s"], result["decode_span_s"] / 9)
 
     def test_missing_done_and_usage_cannot_pass(self):
         stream = io.BytesIO(
             b'data: {"choices":[{"text":"abc","finish_reason":"length"}]}\n'
         )
-        with self.assertRaisesRegex(ValueError, "Incomplete"):
-            consume_sse(stream, 0, 1000, clock=lambda: 1)
+        with self.assertRaisesRegex(RuntimeError, "incomplete"):
+            stream_metrics(stream, 0, False, clock=lambda: 1)
 
     def test_percentile_nearest_rank(self):
         self.assertEqual(percentile(list(range(1, 101)), 0.95), 95)

@@ -8,7 +8,7 @@ import re
 import time
 from pathlib import Path
 
-from scripts.benchmark import MODEL, json_request, verify_endpoint
+from scripts.bench_common import DEFAULT_BASE_URL, MODEL, json_request, verify_endpoint
 from scripts.quality_metrics import (
     aggregate_speculative,
     speculative_metrics,
@@ -219,7 +219,7 @@ def needle_case(base, target):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--base-url", default="http://127.0.0.1:8005")
+    p.add_argument("--base-url", default=DEFAULT_BASE_URL)
     p.add_argument("--text-only", action="store_true")
     p.add_argument(
         "--needle-tokens", type=int, choices=(1024, 32768, 131072, 523000, 1047000)

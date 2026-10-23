@@ -1,4 +1,5 @@
-"""Run the four non-matrix performance scenarios against an existing service."""
+"""Long-tail scenarios from ``config/benchmarks/long_tail.json``: tool history,
+mixed image/text, long soak, and mixed prefill/decode in one service."""
 
 from __future__ import annotations
 
@@ -12,16 +13,24 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
-from scripts.benchmark_common import json_request, request
-from scripts.benchmark_matrix import sse_metrics, token_pool
-from scripts.quality_metrics import (
-    aggregate_speculative,
-    speculative_metrics,
-    text_sha256,
+from scripts.bench_common import (
+    DEFAULT_BASE_URL,
+    MODEL,
+    ROOT,
+    completion_body,
+    json_request,
+    launch_args,
+    load_config,
+    percentile,
+    request,
+    require_model,
+    select_cases,
+    stream_metrics,
+    token_pool,
+    write_report,
 )
+from scripts.quality_metrics import aggregate_speculative
 
-ROOT = Path(__file__).resolve().parents[1]
-MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
 VISION_TEXT = (
     "An engineer compares latency, throughput, memory, and correctness while "
     "reviewing a multimodal inference result. The report keeps every observation "
@@ -48,89 +57,15 @@ def _chat_stream(
     input_tolerance: float = 0.0,
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    first = last = None
-    events: list[float] = []
-    usage = None
-    done = False
-    finish = None
-    output_parts: list[str] = []
-    speculative_payloads: list[dict[str, Any]] = []
     with request(base, "/v1/chat/completions", body, timeout) as response:
-        for line in response:
-            if not line.startswith(b"data:"):
-                continue
-            payload = line[5:].strip()
-            if payload == b"[DONE]":
-                done = True
-                break
-            row = json.loads(payload)
-            if row.get("error"):
-                raise RuntimeError(str(row["error"]))
-            if row.get("usage"):
-                usage = row["usage"]
-                speculative_payloads.append(row["usage"])
-            for key in ("speculative", "speculative_metrics", "decode_metadata", "metrics"):
-                if isinstance(row.get(key), dict):
-                    speculative_payloads.append(row[key])
-            for choice in row.get("choices", []):
-                delta = choice.get("delta", {})
-                content = delta.get("content") or ""
-                reasoning = delta.get("reasoning_content") or ""
-                if content:
-                    output_parts.append(content)
-                if reasoning:
-                    output_parts.append("<reasoning>" + reasoning)
-                if delta.get("tool_calls"):
-                    output_parts.append(
-                        "<tool_calls>"
-                        + json.dumps(
-                            delta["tool_calls"],
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        )
-                    )
-                if delta.get("content") or delta.get("reasoning_content") or delta.get("tool_calls"):
-                    now = time.perf_counter()
-                    first = now if first is None else first
-                    last = now
-                    events.append(now)
-                if choice.get("finish_reason") is not None:
-                    finish = choice["finish_reason"]
-    if not done or first is None or last is None or usage is None or finish is None:
-        raise RuntimeError("incomplete chat SSE response")
-    output_tokens = int(usage["completion_tokens"])
-    if output_tokens != expected_output:
-        raise RuntimeError(
-            f"server returned {output_tokens} output tokens; expected {expected_output}"
+        return stream_metrics(
+            response,
+            started,
+            True,
+            expected_output,
+            expected_input,
+            input_tolerance,
         )
-    input_tokens = int(usage["prompt_tokens"])
-    if expected_input is not None:
-        delta = abs(input_tokens - expected_input) / max(1, expected_input)
-        if delta > input_tolerance:
-            raise RuntimeError(
-                f"server returned {input_tokens} input tokens; expected "
-                f"{expected_input} +/- {input_tolerance:.1%}"
-            )
-    decode_span = last - first
-    return {
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-        "ttft_s": first - started,
-        "e2e_s": time.perf_counter() - started,
-        "decode_span_s": decode_span,
-        "prefill_tps": usage["prompt_tokens"] / (first - started),
-        "decode_tps": (output_tokens - 1) / decode_span
-        if output_tokens > 1 and decode_span > 0
-        else None,
-        "tpot_s": decode_span / (output_tokens - 1)
-        if output_tokens > 1 and decode_span > 0
-        else None,
-        "itl_s": [b - a for a, b in zip(events, events[1:], strict=False)],
-        "finish_reason": finish,
-        "output_sha256": text_sha256("".join(output_parts)),
-        "output_chars": len("".join(output_parts)),
-        "speculative": speculative_metrics(*speculative_payloads),
-    }
 
 
 def _tool_messages(rounds: int) -> list[dict[str, Any]]:
@@ -232,19 +167,6 @@ def _vision_body(
     }
 
 
-def _completion_body(prompt: list[int], osl: int, seed: int) -> dict[str, Any]:
-    return {
-        "model": MODEL,
-        "prompt": prompt,
-        "temperature": 0,
-        "seed": seed,
-        "ignore_eos": True,
-        "max_tokens": osl,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-    }
-
-
 def _completion_one(
     base: str,
     prompt: list[int],
@@ -257,17 +179,11 @@ def _completion_one(
     started = time.perf_counter()
     try:
         with request(
-            base, "/v1/completions", _completion_body(prompt, osl, seed), timeout
+            base, "/v1/completions", completion_body(prompt, osl, seed), timeout
         ) as response:
-            metrics = sse_metrics(response, started)
-        if expected_input is not None:
-            actual = int(metrics["input_tokens"])
-            delta = abs(actual - expected_input) / max(1, expected_input)
-            if delta > input_tolerance:
-                raise RuntimeError(
-                    f"server returned {actual} input tokens; expected "
-                    f"{expected_input} +/- {input_tolerance:.1%}"
-                )
+            metrics = stream_metrics(
+                response, started, False, osl, expected_input, input_tolerance
+            )
         return {"status": "PASS", **metrics}
     except Exception as error:
         return {"status": "FAIL", "error": str(error), "e2e_s": time.perf_counter() - started}
@@ -276,10 +192,7 @@ def _completion_one(
 def _summary(rows: list[dict[str, Any]], elapsed: float) -> dict[str, Any]:
     good = [row for row in rows if row["status"] == "PASS"]
     all_itl = [v for row in good for v in row.get("itl_s", [])]
-    def p(values: list[float], q: float):
-        if not values:
-            return None
-        return sorted(values)[max(0, int((len(values) * q + 0.999999))) - 1]
+    tpot = [r["tpot_s"] for r in good if r.get("tpot_s")]
     total_in = sum(row.get("input_tokens", 0) for row in good)
     total_out = sum(row.get("output_tokens", 0) for row in good)
     return {
@@ -288,14 +201,17 @@ def _summary(rows: list[dict[str, Any]], elapsed: float) -> dict[str, Any]:
         "success": len(good),
         "failure_rate": 1 - len(good) / len(rows) if rows else 1.0,
         "elapsed_s": elapsed,
-        "prefill_tps": total_in / elapsed if elapsed else None,
-        "decode_tps": total_out / elapsed if elapsed else None,
-        "ttft_p50_s": p([r["ttft_s"] for r in good], 0.5),
-        "ttft_p95_s": p([r["ttft_s"] for r in good], 0.95),
-        "tpot_p50_s": p([r["tpot_s"] for r in good if r.get("tpot_s")], 0.5),
-        "tpot_p95_s": p([r["tpot_s"] for r in good if r.get("tpot_s")], 0.95),
-        "itl_p50_s": p(all_itl, 0.5),
-        "itl_p95_s": p(all_itl, 0.95),
+        "observed_input_tokens": total_in,
+        "observed_output_tokens": total_out,
+        "input_tps": total_in / elapsed if elapsed else None,
+        "output_tps": total_out / elapsed if elapsed else None,
+        "total_tps": (total_in + total_out) / elapsed if elapsed else None,
+        "ttft_p50_s": percentile([r["ttft_s"] for r in good], 0.5),
+        "ttft_p95_s": percentile([r["ttft_s"] for r in good], 0.95),
+        "tpot_p50_s": percentile(tpot, 0.5),
+        "tpot_p95_s": percentile(tpot, 0.95),
+        "itl_p50_s": percentile(all_itl, 0.5),
+        "itl_p95_s": percentile(all_itl, 0.95),
         "output_sha256": sorted({r["output_sha256"] for r in good if r.get("output_sha256")}),
         "speculative": aggregate_speculative(good),
         "rows": rows,
@@ -549,31 +465,30 @@ def _run_mixed(base: str, case: dict[str, Any], timeout: float) -> dict[str, Any
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--config", type=Path, default=ROOT / "config/benchmarks/scenarios.json")
-    parser.add_argument("--case", required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--case", help="case id; omit to list the cases")
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=3600)
     args = parser.parse_args()
-    config = json.loads(args.config.read_text())
-    case = next(case for case in config["cases"] if case["id"] == args.case)
-    models = json_request(args.base_url, "/v1/models")
-    if config["model"] not in [row["id"] for row in models["data"]]:
-        raise RuntimeError("served model identity is missing")
-    if case["kind"] == "tool_history":
-        report = _run_tool(args.base_url, case, args.timeout)
-    elif case["kind"] == "vision_mix":
-        report = _run_vision(args.base_url, case, args.timeout)
-    elif case["kind"] == "soak":
-        report = _run_soak(args.base_url, case, args.timeout)
-    elif case["kind"] == "mixed":
-        report = _run_mixed(args.base_url, case, args.timeout)
-    else:
+    config = load_config("long_tail")
+    if args.case is None:
+        for case in config["cases"]:
+            print(case["id"], case["kind"], "launch:", " ".join(launch_args(config, case)))
+        return 0
+    if args.output is None:
+        parser.error("--output is required with --case")
+    (case,) = select_cases(config, args.case)
+    require_model(args.base_url)
+    runner = {
+        "tool_history": _run_tool,
+        "vision_mix": _run_vision,
+        "soak": _run_soak,
+        "mixed": _run_mixed,
+    }.get(case["kind"])
+    if runner is None:
         raise ValueError(f"unsupported case kind: {case['kind']}")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps({key: value for key, value in report.items() if key not in {"rows", "decode", "prefill"}}, indent=2))
-    return 0 if report.get("status", "PASS") == "PASS" else 1
+    report = runner(args.base_url, case, args.timeout)
+    return write_report(args.output, report, hide=("rows", "decode", "prefill"))
 
 
 if __name__ == "__main__":

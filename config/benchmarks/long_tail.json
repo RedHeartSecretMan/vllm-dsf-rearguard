@@ -1,5 +1,15 @@
 {
   "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "launch": {
+    "1m": [
+      "--context",
+      "1048576",
+      "--experimental",
+      "stacked-kv",
+      "--experimental",
+      "bounded-prefill"
+    ]
+  },
   "output_tokens": 1000,
   "cases": [
     {
@@ -11,7 +21,8 @@
       "tool_rounds": 240,
       "reasoning_effort": "high",
       "input_tolerance": 0.08,
-      "seed": 1017
+      "seed": 1017,
+      "launch": "1m"
     },
     {
       "id": "vision_mix_4096_c4",
@@ -19,9 +30,14 @@
       "isl": 4096,
       "osl": 1000,
       "concurrency": 4,
-      "image_counts": [1, 2, 4],
+      "image_counts": [
+        1,
+        2,
+        4
+      ],
       "input_tolerance": 0.02,
-      "seed": 1017
+      "seed": 1017,
+      "launch": "1m"
     },
     {
       "id": "long_soak_1024_c64",
@@ -31,7 +47,8 @@
       "concurrency": 64,
       "duration_s": 1800,
       "dataset": "random",
-      "seed": 1017
+      "seed": 1017,
+      "launch": "1m"
     },
     {
       "id": "mixed_prefill_decode_same_service",
@@ -45,7 +62,8 @@
       "prefill_max_inflight": 2,
       "duration_s": 300,
       "dataset": "random",
-      "seed": 1017
+      "seed": 1017,
+      "launch": "1m"
     }
   ]
 }

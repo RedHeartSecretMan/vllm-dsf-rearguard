@@ -1,0 +1,177 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "launch": {
+    "1m": [
+      "--context",
+      "1048576",
+      "--experimental",
+      "stacked-kv",
+      "--experimental",
+      "bounded-prefill"
+    ],
+    "1m-unbounded": [
+      "--context",
+      "1048576",
+      "--experimental",
+      "stacked-kv"
+    ]
+  },
+  "prefill_probe": {
+    "kind": "cyclic_prefill",
+    "isl": 260016,
+    "osl": 1,
+    "cycle": 30000,
+    "stream": false,
+    "note": "prompt[i] = offset + (i % cycle); offset and seed differ per candidate so no run can reuse another's prefix cache"
+  },
+  "smoke_probe": {
+    "isl": 1024,
+    "osl": 128,
+    "requests": 2,
+    "seed": 4242,
+    "stream": false,
+    "pool_text": "A careful engineer reviews code.",
+    "note": "two sequential non-streaming requests with the same random prompt"
+  },
+  "cases": [
+    {
+      "id": "baseline_chunk16384",
+      "kind": "cyclic_prefill",
+      "title": "16K chunk 基线",
+      "launch": "1m",
+      "offset": 1000,
+      "seed": 1017
+    },
+    {
+      "id": "chunk32768",
+      "kind": "cyclic_prefill",
+      "title": "max-num-batched-tokens=32768",
+      "launch": "1m",
+      "extra_launch": [
+        "--chunk",
+        "32768"
+      ],
+      "offset": 3000,
+      "seed": 1019
+    },
+    {
+      "id": "logits_row_chunk_512",
+      "kind": "cyclic_prefill",
+      "title": "SM80 logits-row-chunk=512",
+      "launch": "1m",
+      "extra_launch": [
+        "--logits-row-chunk",
+        "512",
+        "--experimental",
+        "prefill-throttle"
+      ],
+      "offset": 4000,
+      "seed": 1020,
+      "note": "recorded container also ran prefill-throttle; the baseline container did not"
+    },
+    {
+      "id": "dummy_q_empty",
+      "kind": "cyclic_prefill",
+      "title": "DSpark dummy_q 由 zeros 改为 empty",
+      "launch": "1m",
+      "image_variant": "source patch; not a launch option",
+      "offset": 2000,
+      "seed": 1018
+    },
+    {
+      "id": "tp8",
+      "kind": "cyclic_prefill",
+      "title": "TP8 代替 TP4DP2",
+      "launch": "1m",
+      "extra_launch": [
+        "--parallel",
+        "tp8",
+        "--experimental",
+        "prefill-throttle"
+      ],
+      "offset": 5000,
+      "seed": 1021,
+      "note": "recorded container also ran prefill-throttle; the baseline container did not"
+    },
+    {
+      "id": "compact_candidate_mqa",
+      "kind": "matrix_digest",
+      "title": "compact candidate-MQA",
+      "launch": "1m",
+      "extra_launch": [
+        "--experimental",
+        "prefill-throttle"
+      ],
+      "env": {
+        "VLLM_SM80_CANDIDATE_MQA_COMPACT": "1"
+      },
+      "workloads": [
+        {
+          "kind": "matrix",
+          "dataset": "random",
+          "isl": 1024,
+          "osl": 128,
+          "concurrency": 256,
+          "seed": 1017,
+          "source": "recorded: isl 1024 osl 128 C256 seed 1017, matrix runner"
+        },
+        {
+          "kind": "matrix",
+          "dataset": "random",
+          "isl": 16384,
+          "concurrency": 256,
+          "source": "unverified: the original ISL 16384 run (112/256 succeeded) was not found; osl and seed are not recorded"
+        }
+      ],
+      "control": "dense candidate-MQA path; compare output_sha256 per request",
+      "run": "measure each workload with scripts.bench_regular against this launch and again against the dense path, then compare output_sha256 per request",
+      "note": "recorded container also ran prefill-throttle"
+    },
+    {
+      "id": "simple_cpu_offload",
+      "kind": "request_smoke",
+      "title": "SimpleCPUOffloadConnector",
+      "launch": "1m-unbounded",
+      "extra_launch": [
+        "--kv-transfer-config",
+        "{\"kv_connector\":\"SimpleCPUOffloadConnector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use\":8589934592,\"lazy_offload\":false}}"
+      ],
+      "recorded": {
+        "startup": "PASS",
+        "cpu_blocks_per_rank": 9320,
+        "request": "HTTP 500",
+        "failure": "worker crash during the dummy batch; DP Gloo connection closed by peer"
+      }
+    },
+    {
+      "id": "offloading",
+      "kind": "request_smoke",
+      "title": "OffloadingConnector",
+      "launch": "1m-unbounded",
+      "extra_launch": [
+        "--kv-transfer-config",
+        "{\"kv_connector\":\"OffloadingConnector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"blocks_per_chunk\":1}}"
+      ],
+      "recorded": {
+        "startup": "FAIL",
+        "failure": "AssertionError: tokens_per_block=8 not divisible by tokens_per_hash=32"
+      }
+    },
+    {
+      "id": "adaptive_dspark",
+      "kind": "startup_rejected",
+      "title": "adaptive DSpark",
+      "launch": "1m",
+      "extra_launch": [
+        "--experimental",
+        "prefill-throttle"
+      ],
+      "change": "speculative-config enable_adaptive_verification=true with --per-request-spec-decode-metrics detailed",
+      "run": "launch.py no longer exposes this option; start vllm serve with the change above",
+      "recorded": {
+        "startup": "FAIL",
+        "failure": "Adaptive verification trims verification requests on device, which the DeepseekV41IndexerBackend attention backend does not support"
+      }
+    }
+  ]
+}

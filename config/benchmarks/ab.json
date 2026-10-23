@@ -1,0 +1,224 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "launch": {
+    "262k": [
+      "--context",
+      "262144",
+      "--experimental",
+      "stacked-kv"
+    ],
+    "1m": [
+      "--context",
+      "1048576",
+      "--experimental",
+      "stacked-kv",
+      "--experimental",
+      "bounded-prefill"
+    ],
+    "1m-unbounded": [
+      "--context",
+      "1048576",
+      "--experimental",
+      "stacked-kv"
+    ]
+  },
+  "cases": [
+    {
+      "id": "context_limit",
+      "title": "262K 与 1M 上限对照",
+      "control": "max_context",
+      "workload": {
+        "prefill": {
+          "kind": "chat_prefill",
+          "word": "hello",
+          "repeats": 260000,
+          "osl": 1,
+          "label": "ab_compare_1m"
+        },
+        "decode": {
+          "kind": "chat_burst",
+          "prompt": "Strict context A/B decode test. Return a concise numbered list from 1 to 64, one item per line.",
+          "osl": 128,
+          "concurrency": [
+            128,
+            256
+          ]
+        }
+      },
+      "variants": [
+        {
+          "id": "262k",
+          "launch": "262k"
+        },
+        {
+          "id": "1m-unbounded",
+          "launch": "1m-unbounded"
+        }
+      ]
+    },
+    {
+      "id": "bounded_workspace",
+      "title": "bounded workspace",
+      "control": "bounded-prefill",
+      "workload": {
+        "burst": {
+          "kind": "random_burst",
+          "isl": 1024,
+          "osl": 128,
+          "concurrency": [
+            128,
+            256
+          ],
+          "seed": 8080,
+          "cache": "cold"
+        },
+        "prefill": {
+          "kind": "random_prefill",
+          "isl": [
+            260016,
+            1000016
+          ],
+          "osl": 1,
+          "seed": [
+            5051,
+            6061
+          ]
+        }
+      },
+      "variants": [
+        {
+          "id": "off",
+          "launch": "1m-unbounded",
+          "workloads": [
+            "burst",
+            "prefill"
+          ]
+        },
+        {
+          "id": "on",
+          "launch": "1m",
+          "workloads": [
+            "burst",
+            "prefill"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comm_scheduling",
+      "title": "通信与调度参数",
+      "control": "one_option_per_variant",
+      "workload": {
+        "burst": {
+          "kind": "token_burst",
+          "prompt_tokens": 10,
+          "osl": 128,
+          "concurrency": [
+            128,
+            256
+          ]
+        }
+      },
+      "variants": [
+        {
+          "id": "baseline",
+          "launch": "1m"
+        },
+        {
+          "id": "no_eplb",
+          "launch": "1m",
+          "drop_args": [
+            "--enable-eplb",
+            "--eplb-config"
+          ]
+        },
+        {
+          "id": "no_custom_ag_rs",
+          "launch": "1m",
+          "env": {
+            "VLLM_SM80_EP8_CUSTOM_AG_RS": "0"
+          }
+        },
+        {
+          "id": "omp1",
+          "launch": "1m",
+          "env": {
+            "OMP_NUM_THREADS": "1"
+          }
+        },
+        {
+          "id": "decode_metadata_ragged_reuse",
+          "launch": "1m",
+          "extra_launch": [
+            "--experimental",
+            "decode-metadata",
+            "--experimental",
+            "ragged-reuse"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memory_utilization",
+      "title": "显存水位",
+      "control": "gpu_memory_utilization",
+      "workload": {
+        "burst": {
+          "kind": "random_burst",
+          "isl": 1024,
+          "osl": 128,
+          "concurrency": [
+            256
+          ],
+          "cache": "cold"
+        }
+      },
+      "variants": [
+        {
+          "id": "0.90",
+          "launch": "1m",
+          "seed": 8080
+        },
+        {
+          "id": "0.95",
+          "launch": "1m",
+          "extra_launch": [
+            "--memory",
+            "0.95"
+          ],
+          "seed": 9090
+        }
+      ]
+    },
+    {
+      "id": "prefill_throttle",
+      "title": "Prefill throttle",
+      "control": "prefill-throttle",
+      "workload": {
+        "scenario": {
+          "long_tail_case": "mixed_prefill_decode_same_service"
+        }
+      },
+      "variants": [
+        {
+          "id": "off",
+          "launch": "1m",
+          "env": {
+            "VLLM_DSV41_PREFILL_THROTTLE": "0"
+          }
+        },
+        {
+          "id": "cadence_4",
+          "launch": "1m",
+          "extra_launch": [
+            "--experimental",
+            "prefill-throttle"
+          ],
+          "env": {
+            "VLLM_DSV41_PREFILL_THROTTLE_CADENCE": "4"
+          }
+        }
+      ]
+    }
+  ]
+}

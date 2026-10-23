@@ -1,0 +1,144 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "launch": {
+    "262k": [
+      "--context",
+      "262144",
+      "--experimental",
+      "stacked-kv"
+    ],
+    "1m": [
+      "--context",
+      "1048576",
+      "--experimental",
+      "stacked-kv",
+      "--experimental",
+      "bounded-prefill"
+    ]
+  },
+  "cases": [
+    {
+      "id": "short_concurrency",
+      "kind": "chat_burst",
+      "launch": "262k",
+      "prompt": "GPU C{n} validation. Return a concise numbered list from 1 to 64, one item per line.",
+      "osl": 128,
+      "thinking": false,
+      "runs": [
+        {
+          "max_seqs": 128,
+          "concurrency": 64
+        },
+        {
+          "max_seqs": 128,
+          "concurrency": 128
+        },
+        {
+          "max_seqs": 256,
+          "concurrency": 128
+        },
+        {
+          "max_seqs": 256,
+          "concurrency": 256
+        }
+      ]
+    },
+    {
+      "id": "single_prefill",
+      "kind": "chat_prefill",
+      "launch": "262k",
+      "word": "hello",
+      "repeats": [
+        1000,
+        32000,
+        128000,
+        250000,
+        260000
+      ],
+      "osl": 1,
+      "thinking": false
+    },
+    {
+      "id": "single_decode",
+      "kind": "chat_burst",
+      "launch": "262k",
+      "prompt": "Reply with a concise numbered list from 1 to 64.",
+      "osl": 128,
+      "thinking": false,
+      "runs": [
+        {
+          "max_seqs": 256,
+          "concurrency": 1
+        }
+      ]
+    },
+    {
+      "id": "matrix_single",
+      "kind": "matrix",
+      "launch": "1m",
+      "datasets": [
+        "random",
+        "nature"
+      ],
+      "isl": [
+        4096,
+        16384,
+        65536,
+        262144,
+        1047000
+      ],
+      "concurrency": [
+        1
+      ],
+      "osl": 1000,
+      "seed": 20261021
+    },
+    {
+      "id": "matrix_concurrent",
+      "kind": "matrix",
+      "launch": "1m",
+      "datasets": [
+        "random",
+        "nature"
+      ],
+      "isl": [
+        256,
+        1024,
+        4096,
+        16384
+      ],
+      "concurrency": [
+        4,
+        16,
+        64,
+        256
+      ],
+      "osl": 1000,
+      "seed": 20261021
+    },
+    {
+      "id": "long_request_capacity",
+      "kind": "matrix",
+      "launch": "1m",
+      "extra_launch": [
+        "--experimental",
+        "prefill-throttle"
+      ],
+      "datasets": [
+        "random"
+      ],
+      "isl": [
+        1047000
+      ],
+      "concurrency": [
+        4,
+        16
+      ],
+      "osl": 1000,
+      "seed": 20261023,
+      "seed_per_concurrency": false,
+      "timeout": 2400,
+      "note": "recorded run used the 1M launch plus prefill-throttle (VLLM_DSV41_PREFILL_THROTTLE=1, default cadence 4 and min tokens 4096) and one seed for C4 and C16, so the first four C16 prompts repeat C4 and request 0 hit the prefix cache; set seed_per_concurrency to true to give each concurrency its own prompts"
+    }
+  ]
+}

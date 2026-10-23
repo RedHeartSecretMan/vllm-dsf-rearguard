@@ -1,6 +1,9 @@
 """Plan by default. --start requires verified weights and eight idle A100 GPUs."""
 
+from __future__ import annotations
+
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -19,6 +22,57 @@ EXPERIMENTS = {
     "bounded-prefill": "VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE",
     "prefill-throttle": "VLLM_DSV41_PREFILL_THROTTLE",
 }
+KV_TRANSFER_CONNECTORS = {
+    "SimpleCPUOffloadConnector",
+    "OffloadingConnector",
+}
+KV_TRANSFER_ROLES = {"kv_both", "kv_producer", "kv_consumer"}
+
+
+def load_kv_transfer_config(value: str | None) -> dict | None:
+    """Load and validate the small public surface of vLLM KV transfer config.
+
+    The pinned image may reject a connector at startup; this function only
+    validates the launch contract and deliberately does not claim runtime
+    support.  ``@path`` is accepted so a JSON object does not need shell
+    escaping in repeatable launch scripts.
+    """
+    if value is None:
+        return None
+    raw = Path(value[1:]).read_text() if value.startswith("@") else value
+    try:
+        config = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("--kv-transfer-config must be a JSON object or @file") from error
+    if not isinstance(config, dict):
+        raise ValueError("--kv-transfer-config must be a JSON object")
+    connector = config.get("kv_connector")
+    role = config.get("kv_role")
+    if connector not in KV_TRANSFER_CONNECTORS:
+        raise ValueError(
+            "Unsupported kv connector; choose "
+            + ", ".join(sorted(KV_TRANSFER_CONNECTORS))
+        )
+    if role not in KV_TRANSFER_ROLES:
+        raise ValueError("kv_role must be kv_both, kv_producer, or kv_consumer")
+    extra = config.get("kv_connector_extra_config", {})
+    if not isinstance(extra, dict):
+        raise ValueError("kv_connector_extra_config must be an object")
+    for key in (
+        "num_cpu_blocks",
+        "num_cpu_blocks_override",
+        "cpu_bytes_to_use",
+        "cpu_bytes_to_use_per_rank",
+    ):
+        if key in extra and (
+            not isinstance(extra[key], int)
+            or isinstance(extra[key], bool)
+            or extra[key] <= 0
+        ):
+            raise ValueError(f"{key} must be a positive integer")
+    if "lazy_offload" in extra and not isinstance(extra["lazy_offload"], bool):
+        raise ValueError("lazy_offload must be a boolean")
+    return config
 
 
 def make_plan(args):
@@ -53,16 +107,17 @@ def make_plan(args):
     per_rank = args.max_seqs // dp
     if args.chunk < per_rank * (args.dspark + 1):
         raise ValueError("Chunk budget is too small for speculative decode")
+    # Baseline variables that apply to every launch. The options below add the
+    # variables that depend on a launch argument.
     env = json.loads((ROOT / "config/runtime/environment.json").read_text())
     env["VLLM_DSV4_LOGITS_ROW_CHUNK"] = str(args.logits_row_chunk)
     selected = set(args.experimental)
+    kv_transfer = load_kv_transfer_config(args.kv_transfer_config)
     if "stacked-kv" in selected and not args.dspark:
         raise ValueError("stacked-kv requires DSpark")
     for experiment, variable in EXPERIMENTS.items():
         env[variable] = "1" if experiment in selected else "0"
-    # This host has full NVSwitch. Let NCCL select its own algorithms initially.
-    env.pop("NCCL_ALGO")
-    env.pop("NCCL_PROTO")
+    # NVSwitch hosts let NCCL choose its algorithms; "ring" pins them.
     if args.nccl == "ring":
         env.update(NCCL_ALGO="Ring", NCCL_PROTO="Simple")
     if args.kernels == "control":
@@ -152,6 +207,8 @@ def make_plan(args):
                 }
             ),
         ]
+    if kv_transfer is not None:
+        serve += ["--kv-transfer-config", json.dumps(kv_transfer, separators=(",", ":"))]
     if args.text_only:
         serve += ["--language-model-only"]
     else:
@@ -199,6 +256,14 @@ def make_plan(args):
         "kernels": args.kernels,
         "text_only": args.text_only,
         "gpu_validation": "NOT_RUN",
+        "kv_transfer_config": kv_transfer,
+        "kv_transfer_config_sha256": (
+            hashlib.sha256(
+                json.dumps(kv_transfer, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            if kv_transfer is not None
+            else None
+        ),
         "command": command + [args.image] + serve,
     }
 
@@ -237,6 +302,10 @@ def parser():
         help="Opt-in SM80 prefill logits row chunk; 0 keeps the monolithic path",
     )
     p.add_argument("--memory", type=float, default=0.90)
+    p.add_argument(
+        "--kv-transfer-config",
+        help="JSON object or @file for SimpleCPUOffloadConnector/OffloadingConnector",
+    )
     p.add_argument("--kernels", choices=("control", "optimized"), default="optimized")
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")
     p.add_argument("--text-only", action="store_true")
