@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 22
+      "files": 26
     },
     {
       "name": "model_support",
@@ -219,13 +219,37 @@
     {
       "path": "vllm/entrypoints/openai/responses/utils.py",
       "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
-      "patched_sha256": "45fc6d7dfbaeb08e796a368925c8e6e1b7cbad74d28e1e7e064e9cadb88b5047",
+      "patched_sha256": "8d4a3ef8062914fa3ca8bc3520a1c80247e2b283f07106b01290f5a1e98cf415",
       "stage": "base_integration"
     },
     {
       "path": "vllm/entrypoints/openai/responses/protocol.py",
       "base_sha256": "95608b698c923f92e8494a98d4db92ca1fdbdde11b4aad4181c8e6eabb36585e",
-      "patched_sha256": "c1241aa309c59c69ee4819473b10e24d24bf0ea977ca2427ba2087024582a06f",
+      "patched_sha256": "afb3fbb699036ba340409d7dce3b123dd757d3d193b8ff6c856a592b74823590",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/tool_parsers/utils.py",
+      "base_sha256": "e9d1383512358a193efdacdc20c407da4991a4c5bb05bccb5485ba47c5dfffde",
+      "patched_sha256": "5d11169a3ded6b1bb89cba1499eff441f938f973466d577de4624dcc5c776f65",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/tool_parsers/structural_tag_registry.py",
+      "base_sha256": "5d1a4b2789cb0fe05f8fbfa8739036965cb8a2746efff77749bb53176aad569c",
+      "patched_sha256": "2f827c803e54035e554038f5715ab9219215d51a4843d760167f17a62386bfa7",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/parser/abstract_parser.py",
+      "base_sha256": "368997944992edcd312acc6cb08de6877c87ed7160c8b4ca5897d7ae2bdc39d7",
+      "patched_sha256": "289281befd05bf2e90029b1ab9857d9480f8968384667aaa779f52c2fee2890b",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/streaming_events.py",
+      "base_sha256": "f2681d82bdb1d041b3d78535db90b556d29c6474f790b783079c7ea156319017",
+      "patched_sha256": "9a213dcd45f4296e98326397d5613a18bc1fa434fc59dd797b8cf61f4035cf99",
       "stage": "base_integration"
     }
   ],

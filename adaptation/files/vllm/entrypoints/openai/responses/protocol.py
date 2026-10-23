@@ -14,6 +14,8 @@ from openai.types.responses import (
     ResponseCodeInterpreterCallInterpretingEvent,
     ResponseContentPartAddedEvent,
     ResponseContentPartDoneEvent,
+    ResponseCustomToolCallInputDeltaEvent,
+    ResponseCustomToolCallInputDoneEvent,
     ResponseFunctionToolCall,
     ResponseInputItemParam,
     ResponseMcpCallArgumentsDeltaEvent,
@@ -136,6 +138,7 @@ class ResponseCustomToolCallInput(OpenAIBaseModel):
     status: Literal["in_progress", "completed", "incomplete"] | None = None
     call_id: str
     name: str
+    namespace: str | None = None
     input: str
 
 
@@ -146,6 +149,7 @@ class ResponseCustomToolCallOutput(OpenAIBaseModel):
     id: str | None = None
     status: Literal["in_progress", "completed", "incomplete"] | None = None
     call_id: str
+    namespace: str | None = None
     output: str
 
 
@@ -895,6 +899,8 @@ StreamingResponsesResponse: TypeAlias = (
     | ResponseOutputItemDoneEvent
     | ResponseContentPartAddedEvent
     | ResponseContentPartDoneEvent
+    | ResponseCustomToolCallInputDeltaEvent
+    | ResponseCustomToolCallInputDoneEvent
     | ResponseReasoningTextDeltaEvent
     | ResponseReasoningTextDoneEvent
     | ResponseReasoningPartAddedEvent

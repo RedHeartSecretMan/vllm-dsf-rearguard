@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import json
+
+import partial_json_parser
 from collections.abc import Iterable
 from typing import Any
 
@@ -14,6 +16,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
     Function as FunctionCallTool,
 )
 from openai.types.responses import (
+    ResponseCustomToolCall,
     ResponseFunctionToolCall,
     ResponseOutputItem,
     ResponseOutputMessage,
@@ -29,6 +32,7 @@ from openai.types.responses.response_reasoning_item import (
     Content as ResponseReasoningTextContent,
 )
 from openai.types.responses.tool import Tool
+from partial_json_parser.core.options import Allow
 
 from vllm import envs
 from vllm.entrypoints.chat_utils import make_tool_call_id
@@ -49,6 +53,43 @@ from vllm.tool_parsers.utils import (
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
+
+
+def custom_tool_names(tools: list[Tool] | None) -> frozenset[str]:
+    names = set()
+    for tool in tools or []:
+        if tool.type == "custom":
+            names.add(tool.name)
+        elif tool.type == "namespace":
+            names.update(
+                f"{tool.name}__{nested.name}"
+                for nested in tool.tools
+                if nested.type == "custom"
+            )
+    return frozenset(names)
+
+
+def decode_custom_tool_input(arguments: str) -> str:
+    try:
+        payload = json.loads(arguments)
+    except ValueError:
+        return arguments
+    if isinstance(payload, dict) and isinstance(payload.get("input"), str):
+        return payload["input"]
+    return arguments
+
+
+def decode_custom_tool_input_prefix(arguments: str) -> str:
+    try:
+        payload = partial_json_parser.loads(arguments, Allow.STR | Allow.OBJ)
+    except (ValueError, IndexError, AssertionError):
+        return ""
+    if not isinstance(payload, dict) or not isinstance(payload.get("input"), str):
+        return ""
+    value = payload["input"]
+    if value and "\ud800" <= value[-1] <= "\udbff":
+        return value[:-1]
+    return value
 
 
 def _item_type(item: ResponseInputOutputItem) -> str | None:
@@ -75,6 +116,7 @@ def build_response_output_items(
 ) -> list[ResponseOutputItem]:
     outputs: list[ResponseOutputItem] = []
     tool_call_name_map = build_responses_tool_call_name_map(tools)
+    custom_names = custom_tool_names(tools)
 
     if reasoning:
         outputs.append(
@@ -109,14 +151,27 @@ def build_response_output_items(
 
     if tool_calls:
         for idx, tool_call in enumerate(tool_calls):
+            call_id = tool_call.id or make_tool_call_id(
+                func_name=tool_call.name, idx=idx
+            )
+            if tool_call.name in custom_names:
+                outputs.append(
+                    ResponseCustomToolCall(
+                        id=f"ctc_{random_uuid()}",
+                        call_id=call_id,
+                        type="custom_tool_call",
+                        name=tool_call.name,
+                        input=decode_custom_tool_input(tool_call.arguments),
+                    )
+                )
+                continue
             call_name = resolve_responses_tool_call_name(
                 tool_call.name, tool_call_name_map=tool_call_name_map
             )
             outputs.append(
                 ResponseFunctionToolCall(
                     id=f"fc_{random_uuid()}",
-                    call_id=tool_call.id
-                    or make_tool_call_id(func_name=tool_call.name, idx=idx),
+                    call_id=call_id,
                     type="function_call",
                     status="completed",
                     name=call_name.name,
