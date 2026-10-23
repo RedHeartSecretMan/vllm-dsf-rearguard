@@ -37,18 +37,18 @@ def functions(path, names, namespace=None):
 
 
 class VisionReferenceTests(unittest.TestCase):
-    def test_official_reference_hash(self):
+    def test_reference_hash(self):
         manifest = json.loads((ADAPTATION / "manifest.json").read_text())
         self.assertEqual(
             hashlib.sha256(
-                (ADAPTATION / "reference/official_image_processor.py").read_bytes()
+                (ADAPTATION / "reference/image_processor.py").read_bytes()
             ).hexdigest(),
             manifest["image_reference"]["sha256"],
         )
 
-    def test_geometry_matches_official_including_full_1024_token_budget(self):
+    def test_geometry_matches_reference_including_full_1024_token_budget(self):
         names = ("llm_grid", "num_image_tokens", "solve_resize_ratio", "safe_resize")
-        reference = functions(ADAPTATION / "reference/official_image_processor.py", names)
+        reference = functions(ADAPTATION / "reference/image_processor.py", names)
         candidate = functions(
             FILES / "vllm/models/deepseek_v4_1/common/mm_preprocess.py", names
         )

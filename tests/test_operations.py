@@ -56,13 +56,25 @@ class SourcePayloadTests(unittest.TestCase):
         self.assertEqual(
             stages,
             {
-                "base_integration": 20,
+                "base_integration": 21,
                 "model_support": 9,
                 "sm80_acceleration": 4,
             },
         )
         self.assertTrue(all((root / "adaptation/files" / row["path"]).is_file()
                             for row in files))
+
+
+    def test_served_vllm_version_is_the_project_version(self):
+        root = Path(__file__).resolve().parents[1]
+        version = (root / "VERSION").read_text().strip()
+        source = (root / "adaptation/files/vllm/_version.py").read_text()
+        namespace = {}
+        exec(compile(source, "_version.py", "exec"), namespace)
+        self.assertEqual(namespace["__version__"], version)
+        self.assertEqual(
+            ".".join(str(part) for part in namespace["__version_tuple__"]), version
+        )
 
 
 class ModelReceiptTests(unittest.TestCase):

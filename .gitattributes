@@ -1,3 +1,3 @@
-/vendor/** -text
-/patches/** -text
-/tests/official_encoding/** -text
+/adaptation/reference/** -text
+/adaptation/files/** -text
+/tests/fixtures/** -text

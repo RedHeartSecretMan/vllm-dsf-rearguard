@@ -90,7 +90,7 @@ def main():
     if args.output.exists():
         p.error("Use a new output path")
     base, candidate = load(args.baseline, "baseline"), load(args.candidate, "candidate")
-    reference = load(ROOT / "adaptation/reference/official_encoder.py", "official")
+    reference = load(ROOT / "adaptation/reference/encoder.py", "reference")
     rows = []
     for turns in args.turns:
         messages = history(turns)
@@ -128,7 +128,7 @@ def main():
                 "baseline_median_ms": before,
                 "candidate_median_ms": after,
                 "cpu_encoding_speedup": before / after,
-                "exact_official_match": True,
+                "exact_reference_match": True,
             }
             rows.append(row)
             print(

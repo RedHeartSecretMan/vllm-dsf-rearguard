@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 20
+      "files": 21
     },
     {
       "name": "model_support",
@@ -215,6 +215,12 @@
       "base_sha256": "559f79b178e8a2bbb2da7f01513cde799ca3b9a622d78bc2e02efc80e62b7db1",
       "patched_sha256": "ade3d30e4be30450b6bfc1caa070857bc4d4703c96391f5fd96cd44093747174",
       "stage": "base_integration"
+    },
+    {
+      "path": "vllm/_version.py",
+      "base_sha256": "8fe922c590c4a22cd3a40f82354eb51bb9d8dba55463dcc9452788b0a5e4e12b",
+      "patched_sha256": "9ffe6f749b0f36eef0679ecb1ae44be7ce6ebe597e862baf654056cdd1b44505",
+      "stage": "base_integration"
     }
   ],
   "references": [
@@ -239,7 +245,7 @@
       "scope": "guarded SM80 port reference"
     }
   ],
-  "official_reference": {
+  "encoder_reference": {
     "source": "ModelScope",
     "revision": "f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad",
     "path": "encoding/encoding.py",

@@ -29,8 +29,8 @@ Inherited runtime dependencies retain their respective licenses.
 
 --------------------------------------------------------------------------------
 
-DeepSeek official encoder, image processor, model files and encoding test
-fixtures (adaptation/reference and tests/fixtures/official_encoding), taken from
+DeepSeek encoder, image processor, model files and encoding test fixtures
+(adaptation/reference and tests/fixtures/encoding_cases), taken from
 ModelScope revision f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad, are licensed under
 the MIT License:
 

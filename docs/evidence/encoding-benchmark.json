@@ -25,7 +25,7 @@
       "baseline_median_ms": 7.115172,
       "candidate_median_ms": 1.87613,
       "cpu_encoding_speedup": 3.7924728030573576,
-      "exact_official_match": true
+      "exact_reference_match": true
     },
     {
       "tool_turns": 64,
@@ -46,7 +46,7 @@
       "baseline_median_ms": 7.102287,
       "candidate_median_ms": 1.9216,
       "cpu_encoding_speedup": 3.6960277893422147,
-      "exact_official_match": true
+      "exact_reference_match": true
     },
     {
       "tool_turns": 256,
@@ -67,7 +67,7 @@
       "baseline_median_ms": 87.919287,
       "candidate_median_ms": 7.332916,
       "cpu_encoding_speedup": 11.989676003379829,
-      "exact_official_match": true
+      "exact_reference_match": true
     },
     {
       "tool_turns": 256,
@@ -88,7 +88,7 @@
       "baseline_median_ms": 87.60448,
       "candidate_median_ms": 7.311604,
       "cpu_encoding_speedup": 11.98156792955417,
-      "exact_official_match": true
+      "exact_reference_match": true
     },
     {
       "tool_turns": 1024,
@@ -109,7 +109,7 @@
       "baseline_median_ms": 1341.59447,
       "candidate_median_ms": 28.453396,
       "cpu_encoding_speedup": 47.15059214724316,
-      "exact_official_match": true
+      "exact_reference_match": true
     },
     {
       "tool_turns": 1024,
@@ -130,7 +130,7 @@
       "baseline_median_ms": 1347.608647,
       "candidate_median_ms": 29.6248,
       "cpu_encoding_speedup": 45.48920657692204,
-      "exact_official_match": true
+      "exact_reference_match": true
     }
   ]
 }

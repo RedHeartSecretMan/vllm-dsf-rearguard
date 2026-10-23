@@ -31,7 +31,7 @@ def load(name, path):
 encoder = load(
     "encoder", ADAPTATION / "files/vllm/tokenizers/deepseek_v41_encoding.py"
 )
-reference = load("official", ADAPTATION / "reference/official_encoder.py")
+reference = load("reference", ADAPTATION / "reference/encoder.py")
 installer = load("installer", ADAPTATION / "install.py")
 
 
@@ -97,9 +97,11 @@ normalize = normalizer()
 
 
 class OfficialParityTests(unittest.TestCase):
-    def test_official_checkpoint_cases_through_tokenizer_normalization(self):
+    def test_checkpoint_cases_through_tokenizer_normalization(self):
         manifest = json.loads((ROOT / "manifests/model-files.json").read_text())
-        fixtures = sorted((ROOT / "tests/fixtures/official_encoding").glob("test_input_*.json"))
+        fixtures = sorted(
+            (ROOT / "tests/fixtures/encoding_cases").glob("test_input_*.json")
+        )
         self.assertEqual(len(fixtures), 5)
         for fixture in fixtures:
             expected_hash = next(
@@ -163,7 +165,7 @@ class OfficialParityTests(unittest.TestCase):
             )
         self.assertEqual(messages, before)
 
-    def test_context_and_drop_modes_keep_official_encoding(self):
+    def test_context_and_drop_modes_keep_reference_encoding(self):
         messages = history() + [
             {
                 "role": "assistant",
@@ -210,8 +212,8 @@ class OfficialParityTests(unittest.TestCase):
     def test_reference_is_pinned(self):
         manifest = json.loads((ADAPTATION / "manifest.json").read_text())
         self.assertEqual(
-            hashlib.sha256((ADAPTATION / "reference/official_encoder.py").read_bytes()).hexdigest(),
-            manifest["official_reference"]["sha256"],
+            hashlib.sha256((ADAPTATION / "reference/encoder.py").read_bytes()).hexdigest(),
+            manifest["encoder_reference"]["sha256"],
         )
         self.assertEqual(
             hashlib.sha256(
@@ -220,7 +222,7 @@ class OfficialParityTests(unittest.TestCase):
             "87b820dc1430924acf39f7c23a8fb2bc6173ed79d65279e6b68ef05708a2dc3e",
         )
 
-    def test_text_and_tool_histories_match_official(self):
+    def test_text_and_tool_histories_match_reference(self):
         examples = [
             [{"role": "user", "content": "Hello"}],
             [
@@ -456,13 +458,13 @@ class RendererOrderTests(unittest.TestCase):
                 prompt["prompt"].index("<tool_result>SECOND"),
             )
             self.assertEqual(prompt["prompt"].count(encoder.IMAGE_PLACEHOLDER), 2)
-            official_prompt, official_media = reference.encode_messages(
+            reference_prompt, reference_media = reference.encode_messages(
                 messages, thinking_mode="thinking", return_multi_modal_data=True
             )
-            self.assertEqual(prompt["prompt"], official_prompt)
+            self.assertEqual(prompt["prompt"], reference_prompt)
             self.assertEqual(
                 prompt["multi_modal_data"]["image"],
-                [item["url"] for item in official_media["images"]],
+                [item["url"] for item in reference_media["images"]],
             )
         self.assertEqual(messages, before)
 
