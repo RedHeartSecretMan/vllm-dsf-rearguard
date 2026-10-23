@@ -9,7 +9,7 @@
 - 适配 SM80 稀疏 MLA、candidate MQA、FP4 Marlin、dense BF16 dispatch、DSpark/EPLB 和 `ep8` 通信路径。
 - 按 1017 官方编码协议处理工具续轮思考历史、工具结果顺序、图片关联和同步/异步 renderer。
 - 恢复官方图像 token 布局和 1024-token 图像预算，完善缓存图片、重复图片、图片起点和长宽比边界。
-- 实验性视频扩展沿用图像视觉塔：每个请求最多 1 个视频，按时间均匀抽样最多 8 帧，每帧沿用 1024-token 图像预算；模型本身没有官方 temporal encoder。
+- 实验性视频扩展沿用图像视觉塔：每个请求最多 1 个视频，默认按 1 FPS 抽样，最多 32 帧，每帧沿用 1024-token 图像预算；模型本身没有官方 temporal encoder。
 - 优化长上下文 indexer 工作区、decode metadata、top-k 共享和 DSpark context KV 投影。
 - 将长工具历史的用户轮边界扫描改为单次计算；wrapper 复用已拥有的消息对象，减少重复遍历和深拷贝。
 - 提供 `decode-metadata`、`ragged-reuse`、`stacked-kv` 和 `bounded-prefill` 四个独立实验开关，默认关闭，可单独进行 A/B 测试。
@@ -58,7 +58,7 @@ python3 launch.py "$MODEL" \
 |---|---|
 | 并行 | `tp8 / ep8`、`tp4dp2 / ep8` |
 | 投机 | `--dspark 0`、`--dspark 5` |
-| 输入 | 原生图文；视频为实验性帧序列扩展，每请求最多 4 张图片或 1 个视频（最多 8 帧）；`--text-only` 运行文本对照 |
+| 输入 | 原生图文；视频为实验性帧序列扩展，每请求最多 4 张图片或 1 个视频（默认 1 FPS、最多 32 帧）；`--text-only` 运行文本对照 |
 | 上下文 | `262144`、`524288`、`1048576` |
 | 内核 | `control`、`optimized` |
 | 通信 | NCCL 自动选择、`--nccl ring` |
@@ -67,7 +67,7 @@ python3 launch.py "$MODEL" \
 
 视频扩展沿用 OpenAI 多模态消息格式，在 `content` 中传入一个
 `{"type":"video_url","video_url":{"url":"..."}}` 块。服务会先由 vLLM
-解码，再均匀抽取最多 8 帧送入现有图像视觉塔；超过限制的帧不会继续增加视觉
+解码，再按时长均匀抽取帧，默认 1 FPS、最多 32 帧，送入现有图像视觉塔；超过限制的帧不会继续增加视觉
 token 预算。这是服务侧扩展，不是 DeepSeek-V4.1 官方视频输入契约。
 
 1M 上下文的高并发 profile 可额外启用 `--experimental bounded-prefill`。它将稀疏 indexer 的预留工作区收敛到单请求可容纳的压缩上下文，保留 1M 单请求能力，减少高并发时的静态预留。

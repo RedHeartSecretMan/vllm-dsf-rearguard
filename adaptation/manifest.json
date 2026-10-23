@@ -81,7 +81,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/amd/vl_model.py",
       "base_sha256": "7b9b65ebb9a3e466aed22b680618aa8b4556d97520690d00652fd5c65e10369c",
-      "patched_sha256": "053720c78034d944877f262d0a9c483049d12bf5887630fa757025a28b676de1",
+      "patched_sha256": "4097e71deb9b7eb1e1ddd9175966055a12c2a9a3ec6983c021a1c7d6eb6b68e0",
       "stage": "model_support"
     },
     {
@@ -93,7 +93,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
-      "patched_sha256": "87854a47a37c14544f087bb76793926c3ae2c2fe9592de4519151bbe1edc6f3d",
+      "patched_sha256": "b651a14afcab4e8a00756f15f88492ca013d82c7ae8a9c005898b2e5d9935138",
       "stage": "model_support"
     },
     {
@@ -111,7 +111,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/vl_model.py",
       "base_sha256": "ab698e56c83a345ea73e41359cab79b5e484ccfc116ed131347d50cdfe896251",
-      "patched_sha256": "7f5db2e094fab5d2a0915834fb039553f6c722ef044a00789b83f51c3bb8e251",
+      "patched_sha256": "68d909ea3da945350255a756b84c5bbdf7d43dd3c79b28bda953865e5522978e",
       "stage": "model_support"
     },
     {

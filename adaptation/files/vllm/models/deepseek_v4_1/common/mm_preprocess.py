@@ -48,11 +48,13 @@ IMAGE_START, IMAGE, IMAGE_NEW_LINE, IMAGE_END = range(4)
 
 IMAGE_PLACEHOLDER = "<｜deepseek_image｜>"
 
-# DeepSeek-V4.1's checkpoint contains an image tower only.  Video requests
-# therefore use a bounded, uniformly sampled sequence of image frames.  The
-# cap is deliberately small enough to keep the existing 1024-token-per-frame
-# budget predictable on the A100 service.
-VIDEO_MAX_FRAMES = 8
+# DeepSeek-V4.1's checkpoint contains an image tower only. Video requests
+# therefore use a duration-aware sequence of image frames. vLLM samples at
+# the requested FPS first; this ceiling is a defensive bound for direct
+# callers that provide all decoded frames themselves.
+VIDEO_SAMPLE_FPS = 1.0
+VIDEO_MAX_FRAMES = 32
+VIDEO_MAX_TOKENS = 32768
 
 
 def sample_video_indices(frame_count: int, max_frames: int = VIDEO_MAX_FRAMES) -> list[int]:
@@ -64,6 +66,27 @@ def sample_video_indices(frame_count: int, max_frames: int = VIDEO_MAX_FRAMES) -
     if frame_count <= max_frames:
         return list(range(frame_count))
     return np.linspace(0, frame_count - 1, max_frames, dtype=np.int64).tolist()
+
+
+def video_frame_timestamps(
+    frame_count: int,
+    metadata: Mapping[str, Any] | None = None,
+) -> list[float]:
+    """Recover sampled frame times from vLLM's video metadata when available."""
+    metadata = metadata or {}
+    indices = metadata.get("frames_indices")
+    fps = metadata.get("fps")
+    if (
+        isinstance(indices, Sequence)
+        and len(indices) == frame_count
+        and isinstance(fps, (int, float))
+        and fps > 0
+    ):
+        return [float(index) / float(fps) for index in indices]
+    duration = metadata.get("duration")
+    if isinstance(duration, (int, float)) and duration > 0 and frame_count > 1:
+        return np.linspace(0.0, float(duration), frame_count).tolist()
+    return [float(index) for index in range(frame_count)]
 
 # The checkpoint tokenizer's id for IMAGE_PLACEHOLDER (the config's
 # ``image_token_id``). Every image-span position carries this id, exactly
@@ -246,9 +269,15 @@ class DeepseekV4VLProcessor:
         super().__init__()
         self.config = config
         self.image_processor = DeepseekV4VLImageProcessor(config)
+        self.max_video_frames = min(
+            VIDEO_MAX_FRAMES,
+            max(1, VIDEO_MAX_TOKENS // config.vision_max_n_token),
+        )
 
     @staticmethod
-    def _video_frames(video: object) -> list[Image.Image]:
+    def _video_frames(
+        video: object, max_frames: int
+    ) -> tuple[list[Image.Image], list[float]]:
         """Normalize one vLLM video item into RGB PIL frames.
 
         vLLM 0.13 passes decoded videos as a list of PIL images, NumPy
@@ -257,8 +286,9 @@ class DeepseekV4VLProcessor:
         A video is sampled uniformly here so every caller has the same
         bounded visual-token cost.
         """
+        metadata: Mapping[str, Any] | None = None
         if isinstance(video, tuple) and len(video) == 2 and isinstance(video[1], Mapping):
-            video = video[0]
+            video, metadata = video
         if isinstance(video, Image.Image):
             frames: list[object] = [video]
         elif isinstance(video, np.ndarray):
@@ -280,7 +310,10 @@ class DeepseekV4VLProcessor:
         else:
             raise ValueError(f"Unsupported video input type: {type(video)!r}")
 
-        frames = [frames[index] for index in sample_video_indices(len(frames))]
+        timestamps = video_frame_timestamps(len(frames), metadata)
+        selected = sample_video_indices(len(frames), max_frames)
+        frames = [frames[index] for index in selected]
+        timestamps = [timestamps[index] for index in selected]
 
         result: list[Image.Image] = []
         for frame in frames:
@@ -309,7 +342,7 @@ class DeepseekV4VLProcessor:
                 result.append(Image.fromarray(frame).convert("RGB"))
                 continue
             raise ValueError(f"Unsupported video frame type: {type(frame)!r}")
-        return result
+        return result, timestamps
 
     def __call__(
         self,
@@ -334,12 +367,14 @@ class DeepseekV4VLProcessor:
         video_vit_grid: list[torch.Tensor] = []
         video_llm_grid: list[torch.Tensor] = []
         video_types: list[torch.Tensor] = []
+        video_timestamps: list[torch.Tensor] = []
         for video in videos or []:
             frame_patches = []
             frame_vit_grid = []
             frame_llm_grid = []
             frame_types = []
-            for frame in self._video_frames(video):
+            frames, timestamps = self._video_frames(video, self.max_video_frames)
+            for frame in frames:
                 patches, n_vit_h, n_vit_w, n_llm_h, n_llm_w = self.image_processor(
                     frame
                 )
@@ -351,6 +386,7 @@ class DeepseekV4VLProcessor:
             video_vit_grid.append(torch.tensor(frame_vit_grid, dtype=torch.int64))
             video_llm_grid.append(torch.tensor(frame_llm_grid, dtype=torch.int64))
             video_types.append(torch.cat(frame_types))
+            video_timestamps.append(torch.tensor(timestamps, dtype=torch.float32))
 
         if not patches_list and not video_patches:
             return BatchFeature({})
@@ -371,6 +407,7 @@ class DeepseekV4VLProcessor:
                     "video_vit_grid": video_vit_grid,
                     "video_llm_grid": video_llm_grid,
                     "video_types": video_types,
+                    "video_timestamps": video_timestamps,
                 }
             )
         return BatchFeature(result)
@@ -393,10 +430,9 @@ class DeepseekV4VLProcessingInfo(BaseProcessingInfo):
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
-        return {
-            "image": self.get_hf_config().vision_max_n_token,
-            "video": self.get_hf_config().vision_max_n_token * VIDEO_MAX_FRAMES,
-        }
+        image_tokens = self.get_hf_config().vision_max_n_token
+        max_frames = min(VIDEO_MAX_FRAMES, max(1, VIDEO_MAX_TOKENS // image_tokens))
+        return {"image": image_tokens, "video": image_tokens * max_frames}
 
     def get_image_placeholder_token_id(self) -> int:
         token_id = self.get_tokenizer().convert_tokens_to_ids(IMAGE_PLACEHOLDER)
@@ -434,6 +470,10 @@ class DeepseekV4VLDummyInputsBuilder(
         mm_options: Mapping[str, BaseDummyOptions] | None = None,
     ) -> MultiModalDataDict:
         size = self.info.get_image_size_with_most_features()
+        max_frames = min(
+            VIDEO_MAX_FRAMES,
+            max(1, VIDEO_MAX_TOKENS // self.info.get_hf_config().vision_max_n_token),
+        )
         video_options = cast(
             VideoDummyOptions | None, (mm_options or {}).get("video")
         )
@@ -449,7 +489,7 @@ class DeepseekV4VLDummyInputsBuilder(
             "video": self._get_dummy_videos(
                 width=size.width,
                 height=size.height,
-                num_frames=VIDEO_MAX_FRAMES,
+                num_frames=max_frames,
                 num_videos=mm_counts.get("video", 0),
                 overrides=video_options,
             ),
@@ -498,6 +538,9 @@ class DeepseekV4VLMultiModalProcessor(
                         "video", keep_on_cpu=True
                     ),
                     "video_types": MultiModalFieldConfig.batched(
+                        "video", keep_on_cpu=True
+                    ),
+                    "video_timestamps": MultiModalFieldConfig.batched(
                         "video", keep_on_cpu=True
                     ),
                 }

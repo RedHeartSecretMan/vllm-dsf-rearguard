@@ -6,6 +6,7 @@ import json
 import math
 import os
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -43,14 +44,28 @@ class VisionReferenceTests(unittest.TestCase):
         candidate = functions(
             FILES / "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
             ("sample_video_indices",),
-            {"np": np, "VIDEO_MAX_FRAMES": 8},
+            {"np": np, "VIDEO_MAX_FRAMES": 32},
         )["sample_video_indices"]
-        self.assertEqual(candidate(3, 8), [0, 1, 2])
+        self.assertEqual(candidate(3, 32), [0, 1, 2])
         self.assertEqual(candidate(12, 4), [0, 3, 7, 11])
+        self.assertEqual(len(candidate(60)), 32)
+        self.assertEqual(candidate(60)[0], 0)
+        self.assertEqual(candidate(60)[-1], 59)
         with self.assertRaisesRegex(ValueError, "no frames"):
             candidate(0)
         with self.assertRaisesRegex(ValueError, "positive"):
             candidate(3, 0)
+
+    def test_video_timestamps_use_decoder_metadata(self):
+        candidate = functions(
+            FILES / "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
+            ("video_frame_timestamps",),
+            {"np": np, "Sequence": Sequence},
+        )["video_frame_timestamps"]
+        self.assertEqual(
+            candidate(3, {"frames_indices": [0, 10, 20], "fps": 10}),
+            [0.0, 1.0, 2.0],
+        )
 
     def test_official_reference_hash(self):
         manifest = json.loads((ADAPTATION / "manifest.json").read_text())

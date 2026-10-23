@@ -157,9 +157,9 @@ class LaunchTests(unittest.TestCase):
         limit = json.loads(
             command[command.index("--limit-mm-per-prompt") + 1]
         )
-        self.assertEqual(limit, {"image": 4, "video": {"count": 1, "num_frames": 8}})
+        self.assertEqual(limit, {"image": 4, "video": {"count": 1, "num_frames": 32}})
         media = json.loads(command[command.index("--media-io-kwargs") + 1])
-        self.assertEqual(media, {"video": {"num_frames": 8}})
+        self.assertEqual(media, {"video": {"num_frames": 32, "fps": 1}})
 
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with self.assertRaisesRegex(ValueError, "trained block"):
