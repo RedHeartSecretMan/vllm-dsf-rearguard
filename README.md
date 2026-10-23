@@ -26,19 +26,19 @@ bash scripts/build.sh
 
 ## 推荐配置
 
-两套配置都使用 `tp4dp2 / ep8`、DSpark k5、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=16384`，不同点是上下文上限：262K 适合高并发，1M 适合容量型请求和长文任务。
+两套配置都使用 `tp4dp2 / ep8`、DSpark k5、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=32768`，不同点是上下文上限：262K 适合高并发，1M 适合容量型请求和长文任务。
 
 262K 配置：
 
 ```bash
-python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 16384 \
+python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 32768 \
   --context 262144 --experimental stacked-kv
 ```
 
 1M 配置：
 
 ```bash
-python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 16384 \
+python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 32768 \
   --context 1048576 --experimental stacked-kv --experimental bounded-prefill
 ```
 

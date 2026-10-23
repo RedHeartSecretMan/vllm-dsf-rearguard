@@ -299,7 +299,7 @@ def parser():
     p.add_argument(
         "--max-seqs", type=int, default=256, help="Global budget across both DP ranks"
     )
-    p.add_argument("--chunk", type=int, default=16384)
+    p.add_argument("--chunk", type=int, default=32768)
     p.add_argument(
         "--logits-row-chunk",
         type=int,
