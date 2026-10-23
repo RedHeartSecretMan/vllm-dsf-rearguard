@@ -70,19 +70,22 @@ def custom_tool_names(tools: list[Tool] | None) -> frozenset[str]:
 
 
 def decode_custom_tool_input(arguments: str | dict[str, Any]) -> str:
-    value: Any = arguments
-    for _ in range(2):
-        if not isinstance(value, str):
-            break
-        try:
-            value = json.loads(value)
-        except (TypeError, ValueError):
-            break
-    if isinstance(value, dict) and isinstance(value.get("input"), str):
-        return value["input"]
-    if isinstance(value, str):
+    def unwrap(value: Any, depth: int = 0) -> Any:
+        if depth >= 3:
+            return value
+        if isinstance(value, dict) and "input" in value:
+            return unwrap(value["input"], depth + 1)
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except (TypeError, ValueError):
+                return value
+            if decoded != value:
+                return unwrap(decoded, depth + 1)
         return value
-    return json.dumps(value, ensure_ascii=False)
+
+    value = unwrap(arguments)
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
 def decode_custom_tool_input_prefix(arguments: str) -> str:
