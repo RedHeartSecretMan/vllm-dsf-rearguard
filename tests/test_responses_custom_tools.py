@@ -13,7 +13,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         )
 
         cls.ResponsesRequest = ResponsesRequest
-        cls.construct_messages = construct_chat_messages_with_tool_call
+        cls.construct_messages = staticmethod(construct_chat_messages_with_tool_call)
 
     def test_custom_tool_call_and_output_round_trip(self):
         request = self.ResponsesRequest.model_validate(
