@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 20
+      "files": 21
     },
     {
       "name": "model_support",
@@ -214,6 +214,12 @@
       "path": "vllm/v1/worker/gpu/spec_decode/speculator.py",
       "base_sha256": "559f79b178e8a2bbb2da7f01513cde799ca3b9a622d78bc2e02efc80e62b7db1",
       "patched_sha256": "ade3d30e4be30450b6bfc1caa070857bc4d4703c96391f5fd96cd44093747174",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/utils.py",
+      "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
+      "patched_sha256": "45fc6d7dfbaeb08e796a368925c8e6e1b7cbad74d28e1e7e064e9cadb88b5047",
       "stage": "base_integration"
     }
   ],
