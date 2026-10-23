@@ -423,7 +423,10 @@ class DeepseekV4VLProcessingInfo(BaseProcessingInfo):
         return DeepseekV4VLProcessor(self.get_hf_config())
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
-        return {"image": None, "video": 1}
+        # Per-request counts are deployment policy and belong in
+        # --limit-mm-per-prompt. The processor itself supports arbitrary
+        # batches of image/video items subject to the visual-token budget.
+        return {"image": None, "video": None}
 
     def get_mm_max_tokens_per_item(
         self,

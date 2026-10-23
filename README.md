@@ -9,7 +9,7 @@
 - 适配 SM80 稀疏 MLA、candidate MQA、FP4 Marlin、dense BF16 dispatch、DSpark/EPLB 和 `ep8` 通信路径。
 - 按 1017 官方编码协议处理工具续轮思考历史、工具结果顺序、图片关联和同步/异步 renderer。
 - 恢复官方图像 token 布局和 1024-token 图像预算，完善缓存图片、重复图片、图片起点和长宽比边界。
-- 实验性视频扩展沿用图像视觉塔：每个请求最多 1 个视频，默认按 1 FPS 抽样，最多 32 帧，每帧沿用 1024-token 图像预算；模型本身没有官方 temporal encoder。
+- 实验性视频扩展沿用图像视觉塔：每个请求最多 2 个视频，最多 64 张图片；视频默认按 1 FPS 抽样，最多 32 帧，每帧沿用 1024-token 图像预算；模型本身没有官方 temporal encoder。
 - 优化长上下文 indexer 工作区、decode metadata、top-k 共享和 DSpark context KV 投影。
 - 将长工具历史的用户轮边界扫描改为单次计算；wrapper 复用已拥有的消息对象，减少重复遍历和深拷贝。
 - 提供 `decode-metadata`、`ragged-reuse`、`stacked-kv` 和 `bounded-prefill` 四个独立实验开关，默认关闭，可单独进行 A/B 测试。
@@ -58,7 +58,7 @@ python3 launch.py "$MODEL" \
 |---|---|
 | 并行 | `tp8 / ep8`、`tp4dp2 / ep8` |
 | 投机 | `--dspark 0`、`--dspark 5` |
-| 输入 | 原生图文；视频为实验性帧序列扩展，每请求最多 4 张图片或 1 个视频（默认 1 FPS、最多 32 帧）；`--text-only` 运行文本对照 |
+| 输入 | 原生图文；视频为实验性帧序列扩展，每请求最多 64 张图片或 2 个视频（默认 1 FPS、最多 32 帧）；`--text-only` 运行文本对照 |
 | 上下文 | `262144`、`524288`、`1048576` |
 | 内核 | `control`、`optimized` |
 | 通信 | NCCL 自动选择、`--nccl ring` |

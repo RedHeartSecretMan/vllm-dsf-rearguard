@@ -159,7 +159,7 @@ def make_plan(args):
         # stay within a bounded visual-token budget.
         serve += [
             "--limit-mm-per-prompt",
-            '{"image":4,"video":{"count":1,"num_frames":32}}',
+            '{"image":64,"video":{"count":2,"num_frames":32}}',
             "--media-io-kwargs",
             '{"video":{"num_frames":32,"fps":1}}',
             "--disable-chunked-mm-input",

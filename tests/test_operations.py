@@ -157,7 +157,7 @@ class LaunchTests(unittest.TestCase):
         limit = json.loads(
             command[command.index("--limit-mm-per-prompt") + 1]
         )
-        self.assertEqual(limit, {"image": 4, "video": {"count": 1, "num_frames": 32}})
+        self.assertEqual(limit, {"image": 64, "video": {"count": 2, "num_frames": 32}})
         media = json.loads(command[command.index("--media-io-kwargs") + 1])
         self.assertEqual(media, {"video": {"num_frames": 32, "fps": 1}})
 

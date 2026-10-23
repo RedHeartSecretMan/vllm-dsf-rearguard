@@ -93,7 +93,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
-      "patched_sha256": "b651a14afcab4e8a00756f15f88492ca013d82c7ae8a9c005898b2e5d9935138",
+      "patched_sha256": "566d28cf4097a3cfbe66694f1eb02bac03ce5fa4083a3bc838986b04dd2ec174",
       "stage": "model_support"
     },
     {

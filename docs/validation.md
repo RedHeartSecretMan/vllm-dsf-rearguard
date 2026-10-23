@@ -17,7 +17,7 @@
 | 1017 完整权重校验 | PASS | 48/48 分片完整 SHA256 通过，revision `f04a978641fa9bfe6f448ec5da3b2e1c2520a6ad` |
 | SM80 数值 / Graph / `ep8` | PASS | TP8 Graph capture、TP4DP2/EP8 启动和 smoke 通过；尚未完成题级精度回归 |
 | 整模型文本/工具/视觉/长文 | PASS | 文本、工具、单图、260K prompt 和 1,000,016 prompt 单请求均通过；多请求长文 soak 尚未完成 |
-| 视频输入适配 | PARTIAL | 服务侧实验性扩展已接入 `video_url`；默认按 1 FPS 抽样、最多 32 帧并复用图像视觉塔；官方实现没有视频契约，固定镜像启动、真实视频接口和 A100 结果待验收 |
+| 视频输入适配 | PARTIAL | 服务侧实验性扩展已接入 `video_url`；默认按 1 FPS 抽样、最多 32 帧，启动限制为每请求 2 个视频和 64 张图片；官方实现没有视频契约，固定镜像启动、真实视频接口和 A100 结果待验收 |
 | Responses custom-tool history | PASS | 固定基础镜像内协议级回归通过；实验主机 `http://dsf.insightx.iluvatar.ai/v1/responses` 用 `scripts/responses_smoke.py` 返回 HTTP 200，回放 `custom_tool_call` / `custom_tool_call_output` |
 | 同负载 A/B 与精度回归 | PARTIAL | 已完成 C64/C128/C256 短请求矩阵、1M workspace A/B、实验开关组合 A/B、prefill 矩阵和四个长尾场景；自然任务质量和更长业务 soak 仍未完成 |
 
