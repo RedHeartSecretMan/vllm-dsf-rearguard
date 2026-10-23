@@ -26,7 +26,11 @@ import torch
 from PIL import Image, ImageOps
 from transformers import BatchFeature
 
-from vllm.config.multimodal import BaseDummyOptions, ImageDummyOptions
+from vllm.config.multimodal import (
+    BaseDummyOptions,
+    ImageDummyOptions,
+    VideoDummyOptions,
+)
 from vllm.inputs import MultiModalDataDict
 from vllm.multimodal.inputs import MultiModalFieldConfig, MultiModalKwargsItems
 from vllm.multimodal.parse import ImageSize, MultiModalDataItems
@@ -43,6 +47,23 @@ from vllm.transformers_utils.configs.deepseek_v41 import DeepseekV41Config
 IMAGE_START, IMAGE, IMAGE_NEW_LINE, IMAGE_END = range(4)
 
 IMAGE_PLACEHOLDER = "<｜deepseek_image｜>"
+
+# DeepSeek-V4.1's checkpoint contains an image tower only.  Video requests
+# therefore use a bounded, uniformly sampled sequence of image frames.  The
+# cap is deliberately small enough to keep the existing 1024-token-per-frame
+# budget predictable on the A100 service.
+VIDEO_MAX_FRAMES = 8
+
+
+def sample_video_indices(frame_count: int, max_frames: int = VIDEO_MAX_FRAMES) -> list[int]:
+    """Return deterministic uniform-sampling indices for a video."""
+    if frame_count <= 0:
+        raise ValueError("Video input contains no frames")
+    if max_frames <= 0:
+        raise ValueError("max_frames must be positive")
+    if frame_count <= max_frames:
+        return list(range(frame_count))
+    return np.linspace(0, frame_count - 1, max_frames, dtype=np.int64).tolist()
 
 # The checkpoint tokenizer's id for IMAGE_PLACEHOLDER (the config's
 # ``image_token_id``). Every image-span position carries this id, exactly
@@ -226,10 +247,75 @@ class DeepseekV4VLProcessor:
         self.config = config
         self.image_processor = DeepseekV4VLImageProcessor(config)
 
+    @staticmethod
+    def _video_frames(video: object) -> list[Image.Image]:
+        """Normalize one vLLM video item into RGB PIL frames.
+
+        vLLM 0.13 passes decoded videos as a list of PIL images, NumPy
+        arrays, or tensors.  Supporting all three keeps the model path
+        independent from the URL/base64 decoder used by the OpenAI server.
+        A video is sampled uniformly here so every caller has the same
+        bounded visual-token cost.
+        """
+        if isinstance(video, tuple) and len(video) == 2 and isinstance(video[1], Mapping):
+            video = video[0]
+        if isinstance(video, Image.Image):
+            frames: list[object] = [video]
+        elif isinstance(video, np.ndarray):
+            if video.ndim != 4:
+                raise ValueError(
+                    "Video NumPy input must have shape [frames, height, width, channels] "
+                    "or [frames, channels, height, width]"
+                )
+            frames = list(video)
+        elif isinstance(video, torch.Tensor):
+            if video.ndim != 4:
+                raise ValueError(
+                    "Video tensor input must have shape [frames, height, width, channels] "
+                    "or [frames, channels, height, width]"
+                )
+            frames = list(video.detach().cpu().numpy())
+        elif isinstance(video, (list, tuple)):
+            frames = list(video)
+        else:
+            raise ValueError(f"Unsupported video input type: {type(video)!r}")
+
+        frames = [frames[index] for index in sample_video_indices(len(frames))]
+
+        result: list[Image.Image] = []
+        for frame in frames:
+            if isinstance(frame, Image.Image):
+                result.append(frame.convert("RGB"))
+                continue
+            if isinstance(frame, torch.Tensor):
+                frame = frame.detach().cpu().numpy()
+            if isinstance(frame, np.ndarray):
+                if frame.ndim != 3:
+                    raise ValueError("Each video frame must be a 3-D image array")
+                # vLLM's VideoItem contract uses HWC arrays.  Accept CHW as a
+                # convenience for direct engine callers as well.
+                if frame.shape[0] in (1, 3, 4) and frame.shape[-1] not in (1, 3, 4):
+                    frame = np.transpose(frame, (1, 2, 0))
+                if frame.shape[-1] == 1:
+                    frame = np.repeat(frame, 3, axis=-1)
+                if frame.shape[-1] == 4:
+                    frame = frame[..., :3]
+                if np.issubdtype(frame.dtype, np.floating):
+                    if frame.size and float(frame.max()) <= 1.0:
+                        frame = frame * 255.0
+                    frame = np.clip(frame, 0, 255).astype(np.uint8)
+                elif frame.dtype != np.uint8:
+                    frame = np.clip(frame, 0, 255).astype(np.uint8)
+                result.append(Image.fromarray(frame).convert("RGB"))
+                continue
+            raise ValueError(f"Unsupported video frame type: {type(frame)!r}")
+        return result
+
     def __call__(
         self,
         text: str | None = None,
         images: Sequence[Image.Image] | None = None,
+        videos: Sequence[object] | None = None,
         return_tensors: str | None = None,
         **kwargs: Any,
     ) -> BatchFeature:
@@ -244,17 +330,50 @@ class DeepseekV4VLProcessor:
             llm_grid_list.append((n_llm_h, n_llm_w))
             types_list.append(image_token_types(n_llm_h, n_llm_w))
 
-        if not patches_list:
-            return BatchFeature({})
+        video_patches: list[torch.Tensor] = []
+        video_vit_grid: list[torch.Tensor] = []
+        video_llm_grid: list[torch.Tensor] = []
+        video_types: list[torch.Tensor] = []
+        for video in videos or []:
+            frame_patches = []
+            frame_vit_grid = []
+            frame_llm_grid = []
+            frame_types = []
+            for frame in self._video_frames(video):
+                patches, n_vit_h, n_vit_w, n_llm_h, n_llm_w = self.image_processor(
+                    frame
+                )
+                frame_patches.append(patches)
+                frame_vit_grid.append((n_vit_h, n_vit_w))
+                frame_llm_grid.append((n_llm_h, n_llm_w))
+                frame_types.append(image_token_types(n_llm_h, n_llm_w))
+            video_patches.append(torch.cat(frame_patches))
+            video_vit_grid.append(torch.tensor(frame_vit_grid, dtype=torch.int64))
+            video_llm_grid.append(torch.tensor(frame_llm_grid, dtype=torch.int64))
+            video_types.append(torch.cat(frame_types))
 
-        return BatchFeature(
-            {
-                "patches": torch.cat(patches_list),
-                "vit_grid": torch.tensor(vit_grid, dtype=torch.int64),
-                "llm_grid": torch.tensor(llm_grid_list, dtype=torch.int64),
-                "types": torch.cat(types_list),
-            }
-        )
+        if not patches_list and not video_patches:
+            return BatchFeature({})
+        result: dict[str, object] = {}
+        if patches_list:
+            result.update(
+                {
+                    "patches": torch.cat(patches_list),
+                    "vit_grid": torch.tensor(vit_grid, dtype=torch.int64),
+                    "llm_grid": torch.tensor(llm_grid_list, dtype=torch.int64),
+                    "types": torch.cat(types_list),
+                }
+            )
+        if video_patches:
+            result.update(
+                {
+                    "video_patches": video_patches,
+                    "video_vit_grid": video_vit_grid,
+                    "video_llm_grid": video_llm_grid,
+                    "video_types": video_types,
+                }
+            )
+        return BatchFeature(result)
 
 
 class DeepseekV4VLProcessingInfo(BaseProcessingInfo):
@@ -267,14 +386,17 @@ class DeepseekV4VLProcessingInfo(BaseProcessingInfo):
         return DeepseekV4VLProcessor(self.get_hf_config())
 
     def get_supported_mm_limits(self) -> Mapping[str, int | None]:
-        return {"image": None}
+        return {"image": None, "video": 1}
 
     def get_mm_max_tokens_per_item(
         self,
         seq_len: int,
         mm_counts: Mapping[str, int],
     ) -> Mapping[str, int]:
-        return {"image": self.get_hf_config().vision_max_n_token}
+        return {
+            "image": self.get_hf_config().vision_max_n_token,
+            "video": self.get_hf_config().vision_max_n_token * VIDEO_MAX_FRAMES,
+        }
 
     def get_image_placeholder_token_id(self) -> int:
         token_id = self.get_tokenizer().convert_tokens_to_ids(IMAGE_PLACEHOLDER)
@@ -301,21 +423,35 @@ class DeepseekV4VLDummyInputsBuilder(
     BaseDummyInputsBuilder[DeepseekV4VLProcessingInfo]
 ):
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
-        return IMAGE_PLACEHOLDER * mm_counts.get("image", 0)
+        return IMAGE_PLACEHOLDER * (
+            mm_counts.get("image", 0) + mm_counts.get("video", 0)
+        )
 
     def get_dummy_mm_data(
         self,
         seq_len: int,
         mm_counts: Mapping[str, int],
-        mm_options: Mapping[str, BaseDummyOptions],
+        mm_options: Mapping[str, BaseDummyOptions] | None = None,
     ) -> MultiModalDataDict:
         size = self.info.get_image_size_with_most_features()
+        video_options = cast(
+            VideoDummyOptions | None, (mm_options or {}).get("video")
+        )
         return {
             "image": self._get_dummy_images(
                 width=size.width,
                 height=size.height,
                 num_images=mm_counts.get("image", 0),
-                overrides=cast(ImageDummyOptions | None, mm_options.get("image")),
+                overrides=cast(
+                    ImageDummyOptions | None, (mm_options or {}).get("image")
+                ),
+            ),
+            "video": self._get_dummy_videos(
+                width=size.width,
+                height=size.height,
+                num_frames=VIDEO_MAX_FRAMES,
+                num_videos=mm_counts.get("video", 0),
+                overrides=video_options,
             ),
         }
 
@@ -328,25 +464,45 @@ class DeepseekV4VLMultiModalProcessor(
         hf_inputs: BatchFeature,
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
+        fields: dict[str, MultiModalFieldConfig] = {}
         vit_grid = hf_inputs.get("vit_grid")
         llm_grid = hf_inputs.get("llm_grid")
-
-        if vit_grid is None or llm_grid is None:
-            empty = torch.empty(0, dtype=torch.long)
-            patch_sizes = types_sizes = empty
-        else:
+        if vit_grid is not None and llm_grid is not None:
             patch_sizes = vit_grid.prod(-1)
             n_llm_h, n_llm_w = llm_grid[:, 0], llm_grid[:, 1]
             types_sizes = n_llm_h * (n_llm_w + 1) + 2
-
-        return {
-            "patches": MultiModalFieldConfig.flat_from_sizes("image", patch_sizes),
-            "vit_grid": MultiModalFieldConfig.batched("image", keep_on_cpu=True),
-            "llm_grid": MultiModalFieldConfig.batched("image", keep_on_cpu=True),
-            "types": MultiModalFieldConfig.flat_from_sizes(
-                "image", types_sizes, keep_on_cpu=True
-            ),
-        }
+            fields.update(
+                {
+                    "patches": MultiModalFieldConfig.flat_from_sizes(
+                        "image", patch_sizes
+                    ),
+                    "vit_grid": MultiModalFieldConfig.batched(
+                        "image", keep_on_cpu=True
+                    ),
+                    "llm_grid": MultiModalFieldConfig.batched(
+                        "image", keep_on_cpu=True
+                    ),
+                    "types": MultiModalFieldConfig.flat_from_sizes(
+                        "image", types_sizes, keep_on_cpu=True
+                    ),
+                }
+            )
+        if "video_patches" in hf_inputs:
+            fields.update(
+                {
+                    "video_patches": MultiModalFieldConfig.batched("video"),
+                    "video_vit_grid": MultiModalFieldConfig.batched(
+                        "video", keep_on_cpu=True
+                    ),
+                    "video_llm_grid": MultiModalFieldConfig.batched(
+                        "video", keep_on_cpu=True
+                    ),
+                    "video_types": MultiModalFieldConfig.batched(
+                        "video", keep_on_cpu=True
+                    ),
+                }
+            )
+        return fields
 
     def _get_prompt_updates(
         self,
@@ -365,10 +521,23 @@ class DeepseekV4VLMultiModalProcessor(
             full = [image_token_id] * types.numel()
             return PromptUpdateDetails.select_token_id(full, image_token_id)
 
+        def get_video_replacement(item_idx: int) -> PromptUpdateDetails:
+            types: torch.Tensor = out_mm_kwargs["video"][item_idx][
+                "video_types"
+            ].data
+            return PromptUpdateDetails.select_token_id(
+                [image_token_id] * types.numel(), image_token_id
+            )
+
         return [
             PromptReplacement(
                 modality="image",
                 target=[image_token_id],
                 replacement=get_image_replacement,
+            ),
+            PromptReplacement(
+                modality="video",
+                target=[image_token_id],
+                replacement=get_video_replacement,
             ),
         ]

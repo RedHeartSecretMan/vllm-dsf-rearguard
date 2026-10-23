@@ -2,13 +2,14 @@
 
 面向 8×A100-SXM4-80GB / NVSwitch，提供 DeepSeek-V4.1-Flash-1017 的适配源码、构建配方和验证工具。
 
-当前实现聚焦文本服务、多用户并发、长上下文和原生图文输入，支持 `tp8 / ep8` 与 `tp4dp2 / ep8` 两种部署方式，并围绕 DSpark、CUDA Graph、稀疏 MLA 和 FP8 KV cache 提供可组合配置。
+当前实现聚焦文本服务、多用户并发、长上下文和原生图文/视频输入，支持 `tp8 / ep8` 与 `tp4dp2 / ep8` 两种部署方式，并围绕 DSpark、CUDA Graph、稀疏 MLA 和 FP8 KV cache 提供可组合配置。
 
 ## 主要改进
 
 - 适配 SM80 稀疏 MLA、candidate MQA、FP4 Marlin、dense BF16 dispatch、DSpark/EPLB 和 `ep8` 通信路径。
 - 按 1017 官方编码协议处理工具续轮思考历史、工具结果顺序、图片关联和同步/异步 renderer。
 - 恢复官方图像 token 布局和 1024-token 图像预算，完善缓存图片、重复图片、图片起点和长宽比边界。
+- 视频输入沿用图像视觉塔：每个请求最多 1 个视频，按时间均匀抽样最多 8 帧，每帧沿用 1024-token 图像预算。
 - 优化长上下文 indexer 工作区、decode metadata、top-k 共享和 DSpark context KV 投影。
 - 将长工具历史的用户轮边界扫描改为单次计算；wrapper 复用已拥有的消息对象，减少重复遍历和深拷贝。
 - 提供 `decode-metadata`、`ragged-reuse`、`stacked-kv` 和 `bounded-prefill` 四个独立实验开关，默认关闭，可单独进行 A/B 测试。
@@ -35,7 +36,7 @@ python3 scripts/model_check.py "$MODEL" --full \
 先生成配置计划，确认参数后再启动：
 
 ```bash
-# tp4dp2 / ep8、DSpark k5、原生图文输入
+# tp4dp2 / ep8、DSpark k5、原生图文/视频输入
 python3 launch.py "$MODEL" \
   --parallel tp4dp2 \
   --dspark 5 \
@@ -57,12 +58,17 @@ python3 launch.py "$MODEL" \
 |---|---|
 | 并行 | `tp8 / ep8`、`tp4dp2 / ep8` |
 | 投机 | `--dspark 0`、`--dspark 5` |
-| 输入 | 原生图文；`--text-only` 运行文本对照 |
+| 输入 | 原生图文和视频；每请求最多 4 张图片或 1 个视频（最多 8 帧）；`--text-only` 运行文本对照 |
 | 上下文 | `262144`、`524288`、`1048576` |
 | 内核 | `control`、`optimized` |
 | 通信 | NCCL 自动选择、`--nccl ring` |
 
 1017 的 DSpark 训练块大小为 5，因此当前服务配置使用 k5。
+
+视频请求沿用 OpenAI 多模态消息格式，在 `content` 中传入一个
+`{"type":"video_url","video_url":{"url":"..."}}` 块。服务会先由 vLLM
+解码，再均匀抽取最多 8 帧送入现有图像视觉塔；超过限制的帧不会继续增加视觉
+token 预算。
 
 1M 上下文的高并发 profile 可额外启用 `--experimental bounded-prefill`。它将稀疏 indexer 的预留工作区收敛到单请求可容纳的压缩上下文，保留 1M 单请求能力，减少高并发时的静态预留。
 

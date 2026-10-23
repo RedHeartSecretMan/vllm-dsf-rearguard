@@ -81,7 +81,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/amd/vl_model.py",
       "base_sha256": "7b9b65ebb9a3e466aed22b680618aa8b4556d97520690d00652fd5c65e10369c",
-      "patched_sha256": "6f3fcc8a5896432ef51f809348097e92c7782ab226adb5ecb32cdc599ce05af4",
+      "patched_sha256": "053720c78034d944877f262d0a9c483049d12bf5887630fa757025a28b676de1",
       "stage": "model_support"
     },
     {
@@ -93,7 +93,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
-      "patched_sha256": "fd7505b6a65c2c8ef4bc03da8139d92912ff21baf7e4326656164dcc226af7e8",
+      "patched_sha256": "87854a47a37c14544f087bb76793926c3ae2c2fe9592de4519151bbe1edc6f3d",
       "stage": "model_support"
     },
     {
@@ -111,7 +111,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/vl_model.py",
       "base_sha256": "ab698e56c83a345ea73e41359cab79b5e484ccfc116ed131347d50cdfe896251",
-      "patched_sha256": "a5a3f477225990946093092d4781db181b59b52102aff2e0e345e631973817f1",
+      "patched_sha256": "7f5db2e094fab5d2a0915834fb039553f6c722ef044a00789b83f51c3bb8e251",
       "stage": "model_support"
     },
     {
@@ -141,13 +141,13 @@
     {
       "path": "vllm/tokenizers/deepseek_v41.py",
       "base_sha256": "d6e9cbce7c5f127819452fa5d03dd4f22ad9f136dd202a54b5b31fe42402cae2",
-      "patched_sha256": "87b820dc1430924acf39f7c23a8fb2bc6173ed79d65279e6b68ef05708a2dc3e",
+      "patched_sha256": "687a37c82becf61def00e4c464a9f5a80d3fd9a6537240fd9dc4f43e6bb44052",
       "stage": "model_support"
     },
     {
       "path": "vllm/tokenizers/deepseek_v41_encoding.py",
       "base_sha256": "081382cb953a1c8041fdfc82a6001cf0c932553171436625c89fe5b9fbcda464",
-      "patched_sha256": "8870e40e16382ba2275054c79526dc1ba968ceb5e3f45a0c9ede3ba49d9833db",
+      "patched_sha256": "c0797e35616d3c75d33af5284b1e0c80e9c708e205b859b7862c737e167d3a44",
       "stage": "model_support"
     },
     {

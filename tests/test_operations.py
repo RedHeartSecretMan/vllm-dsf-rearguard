@@ -152,6 +152,15 @@ class LaunchTests(unittest.TestCase):
             self.assertNotIn("stop", command)
             self.assertIn("127.0.0.1:8005:8000", command)
 
+    def test_multimodal_plan_bounds_video_frames(self):
+        command = self.plan()["command"]
+        limit = json.loads(
+            command[command.index("--limit-mm-per-prompt") + 1]
+        )
+        self.assertEqual(limit, {"image": 4, "video": {"count": 1, "num_frames": 8}})
+        media = json.loads(command[command.index("--media-io-kwargs") + 1])
+        self.assertEqual(media, {"video": {"num_frames": 8}})
+
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with self.assertRaisesRegex(ValueError, "trained block"):
             self.plan("--dspark", "7")

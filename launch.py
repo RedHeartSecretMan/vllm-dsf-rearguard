@@ -153,7 +153,17 @@ def make_plan(args):
     if args.text_only:
         serve += ["--language-model-only"]
     else:
-        serve += ["--limit-mm-per-prompt", '{"image":4}', "--disable-chunked-mm-input"]
+        # The model has an image tower only.  Video requests are uniformly
+        # sampled into at most eight frames by the adapter, and one video per
+        # request keeps the visual-token budget bounded.  The frame option is
+        # also used by vLLM's multimodal memory profiler.
+        serve += [
+            "--limit-mm-per-prompt",
+            '{"image":4,"video":{"count":1,"num_frames":8}}',
+            "--media-io-kwargs",
+            '{"video":{"num_frames":8}}',
+            "--disable-chunked-mm-input",
+        ]
     if args.eager:
         serve += ["--enforce-eager"]
     command = [

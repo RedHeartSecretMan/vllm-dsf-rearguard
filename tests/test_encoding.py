@@ -97,6 +97,22 @@ normalize = normalizer()
 
 
 class OfficialParityTests(unittest.TestCase):
+    def test_video_content_uses_one_application_placeholder(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this."},
+                    {"type": "video_url", "video_url": {"url": "clip.mp4"}},
+                ],
+            }
+        ]
+        normalized = normalize(messages)
+        self.assertEqual(
+            normalized[0]["content"],
+            "Describe this.\n\n" + encoder.IMAGE_PLACEHOLDER,
+        )
+
     def test_official_checkpoint_cases_through_tokenizer_normalization(self):
         manifest = json.loads((ROOT / "manifests/model-files.json").read_text())
         fixtures = sorted((ROOT / "tests/fixtures/official_encoding").glob("test_input_*.json"))
@@ -217,7 +233,7 @@ class OfficialParityTests(unittest.TestCase):
             hashlib.sha256(
                 (ADAPTATION / "files/vllm/tokenizers/deepseek_v41.py").read_bytes()
             ).hexdigest(),
-            "87b820dc1430924acf39f7c23a8fb2bc6173ed79d65279e6b68ef05708a2dc3e",
+            "687a37c82becf61def00e4c464a9f5a80d3fd9a6537240fd9dc4f43e6bb44052",
         )
 
     def test_text_and_tool_histories_match_official(self):

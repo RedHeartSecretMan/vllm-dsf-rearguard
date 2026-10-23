@@ -10,6 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTATION = ROOT / "adaptation"
 FILES = ADAPTATION / "files"
@@ -37,6 +39,19 @@ def functions(path, names, namespace=None):
 
 
 class VisionReferenceTests(unittest.TestCase):
+    def test_video_sampling_is_bounded_and_deterministic(self):
+        candidate = functions(
+            FILES / "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
+            ("sample_video_indices",),
+            {"np": np, "VIDEO_MAX_FRAMES": 8},
+        )["sample_video_indices"]
+        self.assertEqual(candidate(3, 8), [0, 1, 2])
+        self.assertEqual(candidate(12, 4), [0, 3, 7, 11])
+        with self.assertRaisesRegex(ValueError, "no frames"):
+            candidate(0)
+        with self.assertRaisesRegex(ValueError, "positive"):
+            candidate(3, 0)
+
     def test_official_reference_hash(self):
         manifest = json.loads((ADAPTATION / "manifest.json").read_text())
         self.assertEqual(
