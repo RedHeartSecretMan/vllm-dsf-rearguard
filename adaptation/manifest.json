@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 21
+      "files": 22
     },
     {
       "name": "model_support",
@@ -220,6 +220,12 @@
       "path": "vllm/entrypoints/openai/responses/utils.py",
       "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
       "patched_sha256": "45fc6d7dfbaeb08e796a368925c8e6e1b7cbad74d28e1e7e064e9cadb88b5047",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/protocol.py",
+      "base_sha256": "95608b698c923f92e8494a98d4db92ca1fdbdde11b4aad4181c8e6eabb36585e",
+      "patched_sha256": "c1241aa309c59c69ee4819473b10e24d24bf0ea977ca2427ba2087024582a06f",
       "stage": "base_integration"
     }
   ],

@@ -7,7 +7,10 @@ import unittest
 class ResponsesCustomToolHistoryTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
+        try:
+            from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
+        except ModuleNotFoundError as error:
+            raise unittest.SkipTest("Responses tests require the pinned vLLM runtime") from error
         from vllm.entrypoints.openai.responses.utils import (
             construct_chat_messages_with_tool_call,
         )
