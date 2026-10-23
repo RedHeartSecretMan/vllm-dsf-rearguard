@@ -9,7 +9,7 @@
 | 模型文件与权重校验 | `scripts/model_check.py` | 固定 ModelScope revision，83 个文件（含 48 个权重分片）大小与 SHA256 全部通过 |
 | 适配层原子安装 | `adaptation/install.py` | 40 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
 | 运行时源码复核 | `scripts/check_runtime.py` | 容器内已安装文件与源码清单指纹一致 |
-| CPU 合约与回归测试 | `unittest` | 103 项；Python 3.10 环境运行，包含 Responses custom-tool、视频抽样和部署限制契约 |
+| CPU 合约与回归测试 | `unittest` | 107 项；Python 3.10 环境运行，包含 Responses custom-tool、视频抽样和部署限制契约 |
 | CPU 热路径检查 | `scripts/hotpaths/check.py` | 34 个用例全部通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影 |
 | 固定 digest 镜像构建 | `scripts/build.sh` | 镜像构建、runtime 校验与原生 MXFP8 loader 检查通过 |
 
