@@ -114,7 +114,11 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
             reasoning=None,
             content=None,
             tool_calls=[
-                self.FunctionCall(id="call_1", name="apply_patch", arguments='{"input": "*** Begin Patch\n*** End Patch"}')
+                self.FunctionCall(
+                    id="call_1",
+                    name="apply_patch",
+                    arguments=json.dumps({"input": "*** Begin Patch\n*** End Patch"}),
+                )
             ],
             tools=[self.CustomTool(type="custom", name="apply_patch")],
         )
