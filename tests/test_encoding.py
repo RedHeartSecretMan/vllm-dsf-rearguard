@@ -1,9 +1,8 @@
 # CPU test support; original notices in NOTICE.
-"""Official-format parity and renderer media-order checks; no GPU needed."""
+"""Reference-encoder parity and renderer media-order checks; no GPU needed."""
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import copy
 import hashlib
@@ -16,6 +15,8 @@ import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from scripts.source_extract import load_class, load_function
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTATION = ROOT / "adaptation"
@@ -72,25 +73,19 @@ def history(with_images=False):
 
 def normalizer():
     """Execute the unchanged SM80 baseline wrapper function without transformers/vLLM."""
-    source = ast.parse((ADAPTATION / "files/vllm/tokenizers/deepseek_v41.py").read_text())
-    function = next(
-        n
-        for n in source.body
-        if isinstance(n, ast.FunctionDef) and n.name == "_normalize_messages"
-    )
     namespace = {
         "copy": copy,
         "Any": object,
         "ChatCompletionMessageParam": dict,
         "IMAGE_PLACEHOLDER": encoder.IMAGE_PLACEHOLDER,
     }
-    exec(
-        compile(
-            ast.Module(body=[function], type_ignores=[]), "reference/tokenizer_wrapper.py", "exec"
-        ),
+    return load_function(
+        ADAPTATION / "files/vllm/tokenizers/deepseek_v41.py",
+        "_normalize_messages",
         namespace,
+        annotations=False,
+        filename="reference/tokenizer_wrapper.py",
     )
-    return namespace["_normalize_messages"]
 
 
 normalize = normalizer()
@@ -368,11 +363,6 @@ class OfficialParityTests(unittest.TestCase):
 
 class RendererOrderTests(unittest.TestCase):
     def renderer(self, model_type="deepseek_v41"):
-        source = ast.parse(
-            (ADAPTATION / "files/vllm/renderers/deepseek_v4.py").read_text()
-        )
-        node = next(n for n in source.body if isinstance(n, ast.ClassDef))
-        node.bases = [ast.Name(id="object", ctx=ast.Load())]
         trace = {}
 
         def parse(messages, *args, **kwargs):
@@ -401,9 +391,12 @@ class RendererOrderTests(unittest.TestCase):
             "parse_chat_messages_async": parse_async,
             "parse_dec_only_prompt": lambda text: {"prompt": text},
         }
-        module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
-        exec(compile(module, "patched-renderer.py", "exec"), namespace)
-        renderer_type = namespace["DeepseekV4Renderer"]
+        renderer_type = load_class(
+            ADAPTATION / "files/vllm/renderers/deepseek_v4.py",
+            namespace,
+            bases=["object"],
+            filename="patched-renderer.py",
+        )
         instance = renderer_type.__new__(renderer_type)
         instance.model_config = types.SimpleNamespace(
             hf_config=types.SimpleNamespace(model_type=model_type)

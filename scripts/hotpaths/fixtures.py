@@ -1,33 +1,20 @@
-# CPU test support; original notices in NOTICE.
-"""Shared SM80 optimization checks: execute installed production methods, independent references."""
-import __future__
-import ast
-from contextlib import ExitStack
-from pathlib import Path
+"""Fixtures and independent references for the SM80 hot-path checks."""
+
 import random
 import re
-import sysconfig
-from types import MethodType, SimpleNamespace as NS
+from contextlib import ExitStack
+from pathlib import Path
+from types import MethodType
+from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 import torch
 
-SITE = Path(sysconfig.get_paths()['purelib'])
+from scripts.source_extract import load_method
+
 ROOT = Path(__file__).resolve().parents[2]
 DSPARK = str(ROOT / 'adaptation/files/vllm/models/deepseek_v4_1/nvidia/dspark.py')
 ATTENTION = str(ROOT / 'adaptation/files/vllm/models/deepseek_v4_1/amd/rocm.py')
-
-
-def production_method(path, cls, name, namespace):
-    path = Path(path)
-    if not path.is_absolute():
-        path = SITE / path
-    nodes = next(n for n in ast.parse(path.read_text()).body
-                 if isinstance(n, ast.ClassDef) and n.name == cls).body
-    fn = next(n for n in nodes if isinstance(n, ast.FunctionDef) and n.name == name)
-    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), 'exec',
-                 flags=__future__.annotations.compiler_flag), namespace)
-    return namespace[name]
 
 
 def draft_fixture(device='cpu', enabled=True, path=DSPARK, hidden=5120, head=512, qrank=1280):
@@ -38,7 +25,11 @@ def draft_fixture(device='cpu', enabled=True, path=DSPARK, hidden=5120, head=512
     """
     from vllm.model_executor.layers.linear import MergedColumnParallelLinear
     from vllm.model_executor.layers.quantization.modelopt import (
-        ModelOptLinearMethod, QuantSpec, CkptCtx, kMxfp8Static, kMxfp8Dynamic,
+        CkptCtx,
+        ModelOptLinearMethod,
+        QuantSpec,
+        kMxfp8Dynamic,
+        kMxfp8Static,
     )
     quant = NS(online_quantization_config=None, weight_block_size=(32, 32))
     quant.get_quant_method = lambda *a, **kw: ModelOptLinearMethod(
@@ -83,8 +74,8 @@ def draft_fixture(device='cpu', enabled=True, path=DSPARK, hidden=5120, head=512
                      get_tensor_model_parallel_rank=lambda: 3,
                      fused_moe_make_expert_params_mapping=lambda *a, **kw: [])
     cls = 'DSparkDeepseekV4ForCausalLM'
-    owner._remap_dspark_name = MethodType(production_method(path, cls, '_remap_dspark_name', namespace), owner)
-    owner.load_weights = MethodType(production_method(path, cls, 'load_weights', namespace), owner)
+    owner._remap_dspark_name = MethodType(load_method(path, cls, '_remap_dspark_name', namespace), owner)
+    owner.load_weights = MethodType(load_method(path, cls, 'load_weights', namespace), owner)
     # Use varying exponent bytes, rather than unit scales that could hide a
     # missing/reordered scale shard. Keep valid entries away from saturation.
     torch.manual_seed(413)
@@ -123,7 +114,7 @@ def assert_loaded(owner, refs):
 def context_method(path=DSPARK):
     def insert(attn, kv, positions, slots):
         attn.recorded = (kv.clone(), positions.clone(), slots.clone())
-    return production_method(path, 'DSparkDeepseekV4Model', 'precompute_and_store_context_kv',
+    return load_method(path, 'DSparkDeepseekV4Model', 'precompute_and_store_context_kv',
                              dict(torch=torch, _insert_context_kv=insert))
 
 
@@ -131,7 +122,11 @@ def ragged_reference(indices, token_to_req, table, block_size, valid):
     """Independent CPU mapping of local logical tokens to physical KV slots."""
     indices, token_to_req, table, valid = [t.detach().cpu() for t in (indices, token_to_req, table, valid)]
     flat, ptr, lengths = [], [0], []
-    for row, request, enabled in zip(indices.tolist(), token_to_req.tolist(), valid.tolist()):
+    # The packer receives the whole top-k buffer but only the decode rows are
+    # valid, so zip stops at the shortest input on purpose.
+    for row, request, enabled in zip(  # noqa: B905
+        indices.tolist(), token_to_req.tolist(), valid.tolist()
+    ):
         items = [v for v in row if v >= 0] if enabled else []
         flat.extend(int(table[request, v//block_size])*block_size + v % block_size for v in items)
         lengths.append(len(items))
@@ -159,7 +154,7 @@ def attention_fixture(device, pack, ratio=2, count=6):
              is_valid_token=torch.tensor([True, False, True, True]*4, device=device))
     meta = NS(block_size=64, block_table=table)
     ns = dict(torch=torch, compute_global_topk_ragged_indices_and_indptr=pack)
-    fn = production_method(ATTENTION, 'DeepseekV41ROCMAiterMLAAttention', '_decode_topk_ragged', ns)
+    fn = load_method(ATTENTION, 'DeepseekV41ROCMAiterMLAAttention', '_decode_topk_ragged', ns)
     source = NS(_reuse_topk_ragged=True, _topk_ragged_cache={}, _index_source_prefix='source',
                 compress_ratio=ratio, topk_indices_buffer=topk)
     context = {'source': source}

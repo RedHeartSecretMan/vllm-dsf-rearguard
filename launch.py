@@ -225,7 +225,7 @@ def make_plan(args):
         "--name",
         args.name,
         "--label",
-        "flash1017.owner=deepseek-v4.1-flash-a100",
+        "dsv41-a100.owner=deepseek-v4.1-flash-a100",
         "--gpus",
         "all",
         "--ipc=private",
@@ -320,7 +320,7 @@ def parser():
         "--eager", action="store_true", help="Correctness control without CUDA graphs"
     )
     p.add_argument("--port", type=int, default=8005)
-    p.add_argument("--name", default="deepseek-flash1017-test")
+    p.add_argument("--name", default="deepseek-v41-a100")
     p.add_argument("--image", default="deepseek-v4.1-flash-a100:dev")
     p.add_argument("--receipt", type=Path, default=ROOT / "runtime/model-verified.json")
     p.add_argument("--start", action="store_true")
@@ -354,7 +354,7 @@ def main():
                 "--entrypoint",
                 "python3",
                 image["Id"],
-                "/opt/flash1017/check_runtime.py",
+                "/opt/dsv41-a100/check_runtime.py",
             ],
         )
     )

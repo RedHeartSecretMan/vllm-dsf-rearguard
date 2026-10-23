@@ -48,7 +48,7 @@ from vllm.v1.kv_cache_interface import (
 
 logger = init_logger(__name__)
 
-_FLASH1017_FAST_METADATA = os.environ.get("VLLM_DSV41_DECODE_METADATA_FASTPATH", "0") == "1"
+_FAST_DECODE_METADATA = os.environ.get("VLLM_DSV41_DECODE_METADATA_FASTPATH", "0") == "1"
 
 # The DSA indexer K cache is always quantized; "auto" means fp8 (V3.2 layout)
 # and mxfp4 is the opt-in Blackwell path.
@@ -1410,12 +1410,12 @@ class DeepseekV32IndexerMetadataBuilder(AttentionMetadataBuilder):
                     self.compressed_slot_mapping_buffer[:padded_num_tokens],
                     dim=0,
                 )
-            if not _FLASH1017_FAST_METADATA:
+            if not _FAST_DECODE_METADATA:
                 compressed_seq_lens = seq_lens // self.compress_ratio
 
         prefill_metadata = None
         if num_prefills > 0:
-            if _FLASH1017_FAST_METADATA and self.compress_ratio > 1:
+            if _FAST_DECODE_METADATA and self.compress_ratio > 1:
                 compressed_seq_lens = seq_lens // self.compress_ratio
             # This CPU value is an upper bound for async-spec extend rows.  It
             # is safe for chunking/allocation because CUDA metadata below is

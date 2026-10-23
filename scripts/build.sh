@@ -23,7 +23,7 @@ image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 # Deliberately omit --gpus: these are source/CPU checks.
 docker run --rm --runtime=runc --network none -e CUDA_VISIBLE_DEVICES= \
   -e NVIDIA_VISIBLE_DEVICES=void --entrypoint python3 "$image_id" \
-  /opt/flash1017/check_runtime.py
+  /opt/dsv41-a100/check_runtime.py
 docker run --rm --runtime=runc --network none -e CUDA_VISIBLE_DEVICES= \
   -e NVIDIA_VISIBLE_DEVICES=void -e VLLM_TARGET_DEVICE=cpu \
   --entrypoint vllm "$image_id" serve --help \

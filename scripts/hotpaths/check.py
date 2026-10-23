@@ -1,69 +1,57 @@
-"""Exercise actual candidate methods with CPU tensors; CUDA/Marlin is not certified."""
+"""Exercise the actual SM80 hot-path methods with CPU tensors.
 
-import __future__
+Run with an empty CUDA_VISIBLE_DEVICES::
+
+    python3 -m scripts.hotpaths.check --output runtime/hotpaths-cpu.json
+    python3 -m scripts.hotpaths.check --native-loader   # needs the vLLM image
+
+CUDA and Marlin kernels are not exercised.
+"""
 
 import argparse
-import ast
 import hashlib
 import json
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace as NS
 
-try:
-    import torch
-except ModuleNotFoundError:  # unittest discovery does not require PyTorch.
-    torch = None
+import torch
+from torch.utils._python_dispatch import TorchDispatchMode
 
-if torch is not None:
-    from support.hotpath_runtime import (
-        assert_loaded,
-        assert_ragged,
-        attention_fixture,
-        context_method,
-        draft_fixture,
-        ragged_reference,
-    )
-    from support.metadata_runtime import metadata_prefix
-    from torch.utils._python_dispatch import TorchDispatchMode
+from scripts.hotpaths.fixtures import (
+    assert_loaded,
+    assert_ragged,
+    attention_fixture,
+    context_method,
+    draft_fixture,
+    ragged_reference,
+)
+from scripts.hotpaths.prefix import metadata_prefix
+from scripts.source_extract import load_function, run_function_tree
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 FILES = ROOT / "adaptation/files"
 
 
-if torch is not None:
+class Operations(TorchDispatchMode):
+    def __init__(self):
+        self.counts = Counter()
 
-    class Operations(TorchDispatchMode):
-        def __init__(self):
-            self.counts = Counter()
-
-        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
-            self.counts[func._schema.name] += 1
-            return func(*args, **(kwargs or {}))
-
-else:
-
-    class Operations:
-        pass
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        self.counts[func._schema.name] += 1
+        return func(*args, **(kwargs or {}))
 
 
 def metadata_function(path, cls, kind, split, enabled):
     namespace = dict(
         torch=torch,
-        _FLASH1017_FAST_METADATA=enabled,
+        _FAST_DECODE_METADATA=enabled,
         split_decodes_and_prefills=lambda *a, **k: split,
         get_compressed_slot_mapping=lambda *a, out: out[: a[0]],
     )
-    exec(
-        compile(
-            metadata_prefix(path, cls, kind),
-            str(path),
-            "exec",
-            flags=__future__.annotations.compiler_flag,
-        ),
-        namespace,
+    return run_function_tree(
+        metadata_prefix(path, cls, kind), path, namespace, "build"
     )
-    return namespace["build"]
 
 
 def check_metadata():
@@ -218,24 +206,11 @@ def check_reuse():
 
 
 def check_empty_pack():
-    path = FILES / "vllm/models/deepseek_v4_1/amd/rocm.py"
-    function = next(
-        node
-        for node in ast.parse(path.read_text()).body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "compute_global_topk_ragged_indices_and_indptr"
+    pack = load_function(
+        FILES / "vllm/models/deepseek_v4_1/amd/rocm.py",
+        "compute_global_topk_ragged_indices_and_indptr",
+        {"torch": torch},
     )
-    namespace = {"torch": torch}
-    exec(
-        compile(
-            ast.Module(body=[function], type_ignores=[]),
-            str(path),
-            "exec",
-            flags=__future__.annotations.compiler_flag,
-        ),
-        namespace,
-    )
-    pack = namespace["compute_global_topk_ragged_indices_and_indptr"]
     actual = pack(
         torch.empty((0, 1, 512), dtype=torch.int32),
         torch.empty(0, dtype=torch.int32),
@@ -352,8 +327,6 @@ def check_native_loader():
 
 
 def main():
-    if torch is None:
-        raise RuntimeError("test_cpu_hotpaths.py requires PyTorch when run directly")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native-loader", action="store_true")
     parser.add_argument("--output", type=Path)

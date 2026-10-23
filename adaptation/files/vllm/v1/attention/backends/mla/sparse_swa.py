@@ -41,7 +41,7 @@ from vllm.v1.kv_cache_interface import (
     get_kv_quant_mode,
 )
 
-_FLASH1017_FAST_METADATA = os.environ.get("VLLM_DSV41_DECODE_METADATA_FASTPATH", "0") == "1"
+_FAST_DECODE_METADATA = os.environ.get("VLLM_DSV41_DECODE_METADATA_FASTPATH", "0") == "1"
 
 # DeepseekV4 decode layer types, keyed by compress_ratio. Each type has a distinct
 # (topk, extra_topk, extra_page_block_size) config, so they cannot share a
@@ -582,7 +582,7 @@ class DeepseekSparseSWAMetadataBuilder(AttentionMetadataBuilder):
         )
 
         is_valid_token = self.is_valid_token[: slot_mapping.shape[0]]
-        if _FLASH1017_FAST_METADATA:
+        if _FAST_DECODE_METADATA:
             torch.ge(slot_mapping, 0, out=is_valid_token)
         else:
             is_valid_token.copy_(slot_mapping >= 0)

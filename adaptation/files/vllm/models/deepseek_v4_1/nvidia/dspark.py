@@ -134,7 +134,7 @@ class DSparkDeepseekV4Model(nn.Module):
                 prefix=maybe_prefix(prefix, "context_wkv_proj"),
                 disable_tp=True,
             )
-        logger.info_once("Flash1017 DSpark stacked context KV: %s",
+        logger.info_once("DSpark stacked context KV: %s",
                          self.context_wkv_proj is not None)
 
         # Heads: final norm, and the Markov + confidence heads.

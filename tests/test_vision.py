@@ -1,6 +1,5 @@
 """CPU reference checks for the actual patched functions; no CUDA or torch mocks of math."""
 
-import ast
 import hashlib
 import json
 import math
@@ -10,30 +9,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from scripts.source_extract import load_functions
+
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTATION = ROOT / "adaptation"
 FILES = ADAPTATION / "files"
 
 
 def functions(path, names, namespace=None):
-    tree = ast.parse(path.read_text())
-    selected = [
-        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in names
-    ]
-    if {n.name for n in selected} != set(names):
-        raise AssertionError("Missing source function")
-    module = ast.Module(
-        body=[
-            ast.ImportFrom(
-                module="__future__", names=[ast.alias(name="annotations")], level=0
-            ),
-            *selected,
-        ],
-        type_ignores=[],
+    return load_functions(
+        path, names, {"math": math, **(namespace or {})}, anywhere=True
     )
-    result = {"math": math, **(namespace or {})}
-    exec(compile(ast.fix_missing_locations(module), str(path), "exec"), result)
-    return result
 
 
 class VisionReferenceTests(unittest.TestCase):

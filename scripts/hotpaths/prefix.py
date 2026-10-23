@@ -1,6 +1,9 @@
-# CPU test support; original notices in NOTICE.
+"""Cut a metadata builder's ``build`` method down to the part the checks run."""
+
 import ast
-from pathlib import Path
+
+from scripts.source_extract import find_method
+
 
 def metadata_prefix(path, cls, kind):
     """Execute the actual changed builder prefix, stopping before unrelated kernels.
@@ -9,9 +12,7 @@ def metadata_prefix(path, cls, kind):
     written. This tests the production branch and persistent output addresses;
     it does not claim to execute an entire attention builder on a CPU.
     """
-    tree = ast.parse(Path(path).read_text())
-    node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls)
-    method = next(n for n in node.body if isinstance(n, ast.FunctionDef) and n.name == 'build')
+    method = find_method(path, cls, 'build')
     prefix = []
     for statement in method.body:
         if kind == 'indexer' and isinstance(statement, ast.If) and ast.unparse(statement.test) == 'num_prefills > 0':

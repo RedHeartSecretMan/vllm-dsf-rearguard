@@ -1,8 +1,5 @@
 """CPU contract checks for the query-sharded top-k exchange helper."""
 
-import __future__
-
-import ast
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +9,7 @@ try:
 except ModuleNotFoundError:  # The repository unit suite can run without PyTorch.
     torch = None
 
+from scripts.source_extract import load_function
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "adaptation/files/vllm/model_executor/layers/sparse_attn_indexer.py"
@@ -21,29 +19,13 @@ SOURCE = ROOT / "adaptation/files/vllm/model_executor/layers/sparse_attn_indexer
 class QueryShardScratchTests(unittest.TestCase):
     @staticmethod
     def helper():
-        tree = ast.parse(SOURCE.read_text())
-        node = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "_all_reduce_decode_topk"
-        )
         namespace = {
             "torch": torch,
             # The identity reduction models one rank and keeps this a pure
             # storage/shape test; collectives are covered by GPU acceptance.
             "tensor_model_parallel_all_reduce": lambda value: value,
         }
-        exec(
-            compile(
-                ast.Module(body=[node], type_ignores=[]),
-                str(SOURCE),
-                "exec",
-                flags=__future__.annotations.compiler_flag,
-            ),
-            namespace,
-        )
-        return namespace["_all_reduce_decode_topk"]
+        return load_function(SOURCE, "_all_reduce_decode_topk", namespace)
 
     def test_workspace_scratch_avoids_per_layer_zero_allocation(self):
         helper = self.helper()

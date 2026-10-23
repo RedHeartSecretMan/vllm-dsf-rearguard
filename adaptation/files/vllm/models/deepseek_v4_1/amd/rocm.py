@@ -492,7 +492,7 @@ class DeepseekV41ROCMAiterMLAAttention(DeepseekV4Attention):
             self._index_source_prefix = _replace_layer_index(self.prefix, self.index_source_layer_id)
             if self._index_source_prefix not in self._static_forward_context:
                 raise NotImplementedError("Index source is outside this rank; cannot reuse ragged metadata")
-        logger.info_once("Flash1017 Ampere/ROCm ragged top-k reuse: %s", self._reuse_topk_ragged)
+        logger.info_once("Ampere/ROCm ragged top-k reuse: %s", self._reuse_topk_ragged)
 
 
     @classmethod
