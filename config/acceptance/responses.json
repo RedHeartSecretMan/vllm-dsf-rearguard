@@ -1,14 +1,14 @@
 {
   "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
   "runner": "scripts.acceptance.responses",
-  "description": "Responses protocol endpoint and history cases; schema and conversion contracts are also covered by CPU tests.",
+  "description": "Live Responses endpoint acceptance with recorded requests, responses and SSE events.",
   "cases": [
-    {"id": "responses-basic", "kind": "text", "mode": "live"},
-    {"id": "responses-custom-tool-history", "kind": "custom_tool_history", "mode": "live"},
-    {"id": "responses-custom-tool-stream", "kind": "custom_tool_history", "mode": "live", "stream": true},
-    {"id": "responses-previous-response-id-tools", "kind": "previous_response_id", "mode": "live"},
-    {"id": "responses-multipart-output", "kind": "multipart_output", "mode": "unit"},
-    {"id": "responses-refusal-output", "kind": "refusal_output", "mode": "unit"},
-    {"id": "responses-image-video-input", "kind": "multimodal_input", "mode": "unit"}
+    {"id": "responses-basic", "kind": "text", "mode": "live", "assertions": ["completed response", "exact output text", "token usage"]},
+    {"id": "responses-custom-tool-history", "kind": "custom_tool_history", "mode": "live", "assertions": ["custom call and output replay", "exact tool result retained"]},
+    {"id": "responses-custom-tool-stream", "kind": "custom_tool_stream", "mode": "live", "stream": true, "assertions": ["forced custom call", "custom delta and done events", "call identity", "lossless freeform input"]},
+    {"id": "responses-previous-response-id-tools", "kind": "previous_response_id", "mode": "live", "requires_launch": ["--responses-store"], "assertions": ["forced custom and function calls", "tool output continuation", "three-turn stored history"]},
+    {"id": "responses-multipart-output", "kind": "multipart_output", "mode": "live", "assertions": ["all assistant output_text parts replayed in order", "empty output message accepted"]},
+    {"id": "responses-refusal-output", "kind": "refusal_output", "mode": "live", "assertions": ["refusal and output_text history retained", "empty output message accepted"]},
+    {"id": "responses-image-video-input", "kind": "multimodal_input", "mode": "live", "fixtures": ["image", "video"], "assertions": ["still image number", "chronological video frame numbers"]}
   ]
 }

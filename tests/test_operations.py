@@ -217,6 +217,23 @@ class LaunchTests(unittest.TestCase):
         self.assertIn(32 * 5, sizes)
         self.assertIn(32 * 6, sizes)
 
+    def test_responses_store_is_opt_in_and_uses_one_api_worker(self):
+        baseline = self.plan()
+        self.assertFalse(baseline["responses_store"])
+        self.assertIsNone(baseline["api_server_count"])
+        self.assertIn("VLLM_ENABLE_RESPONSES_API_STORE=0", baseline["command"])
+        self.assertNotIn("--api-server-count", baseline["command"])
+        for parallel, tp, dp in (("tp4dp2", "4", "2"), ("tp8", "8", "1")):
+            with self.subTest(parallel=parallel):
+                plan = self.plan("--responses-store", "--parallel", parallel)
+                command = plan["command"]
+                self.assertTrue(plan["responses_store"])
+                self.assertEqual(plan["api_server_count"], 1)
+                self.assertIn("VLLM_ENABLE_RESPONSES_API_STORE=1", command)
+                self.assertEqual(command[command.index("--api-server-count") + 1], "1")
+                self.assertEqual(command[command.index("--tensor-parallel-size") + 1], tp)
+                self.assertEqual(command[command.index("--data-parallel-size") + 1], dp)
+
     def test_active_gpu_prevents_start(self):
         output = "\n".join(["NVIDIA A100-SXM4-80GB, 80000"] * 8)
         with (

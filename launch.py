@@ -111,6 +111,7 @@ def make_plan(args):
     # variables that depend on a launch argument.
     env = json.loads((ROOT / "config/runtime/environment.json").read_text())
     env["VLLM_DSV4_LOGITS_ROW_CHUNK"] = str(args.logits_row_chunk)
+    env["VLLM_ENABLE_RESPONSES_API_STORE"] = "1" if args.responses_store else "0"
     selected = set(args.experimental)
     kv_transfer = load_kv_transfer_config(args.kv_transfer_config)
     if "stacked-kv" in selected and not args.dspark:
@@ -207,6 +208,10 @@ def make_plan(args):
                 }
             ),
         ]
+    if args.responses_store:
+        # The pinned Responses store belongs to one API process. Multiple API
+        # workers cannot resolve each other's previous_response_id values.
+        serve += ["--api-server-count", "1"]
     if kv_transfer is not None:
         serve += ["--kv-transfer-config", json.dumps(kv_transfer, separators=(",", ":"))]
     if args.text_only:
@@ -266,6 +271,8 @@ def make_plan(args):
         "kernels": args.kernels,
         "text_only": args.text_only,
         "disable_chunked_mm_input": args.disable_chunked_mm_input,
+        "responses_store": args.responses_store,
+        "api_server_count": 1 if args.responses_store else None,
         "gpu_validation": "NOT_RUN",
         "kv_transfer_config": kv_transfer,
         "kv_transfer_config_sha256": (
@@ -325,6 +332,10 @@ def parser():
     p.add_argument("--kernels", choices=("control", "optimized"), default="optimized")
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")
     p.add_argument("--text-only", action="store_true")
+    p.add_argument(
+        "--responses-store", action="store_true",
+        help="Keep Responses history in one API worker for previous_response_id; disabled by default.",
+    )
     p.add_argument(
         "--disable-chunked-mm-input",
         action=argparse.BooleanOptionalAction,

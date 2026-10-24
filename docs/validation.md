@@ -27,7 +27,7 @@
 
 ## 验收 case
 
-功能验收和质量评测按职责拆成四份 catalog；配置中的 `runner` 是可直接用 `python -m` 调用的模块，`unit` case 由本地测试覆盖，`live` case 需要 pinned vLLM GPU endpoint：
+功能验收和质量评测按职责拆成四份 catalog；配置中的 `runner` 是可直接用 `python -m` 调用的模块。视觉与 Responses case 执行真实 GPU 接口请求，保存请求、响应、期望值和失败详情；代码级回归由 `tests/` 单独验证。
 
 | 类别 | 配置 | 入口 | 内容 |
 |---|---|---|---|
@@ -36,7 +36,19 @@
 | responses | [`responses.json`](../config/acceptance/responses.json) | `scripts.acceptance.responses` | Responses 基础请求、custom-tool history 和 streaming |
 | quality | [`quality.json`](../config/acceptance/quality.json) | `scripts.acceptance.quality` | PPL 和 GPQA Diamond 质量评测计划 |
 
-每个入口都支持 `--list`；视觉视频 case 需要同时通过 `--video` 提供验收用视频文件、通过 `--launch-receipt` 校验启动时的媒体限制和 chunk 参数。
+每个入口都支持 `--list`。视觉与 Responses 共用合成的数字图片和短、长视频；先用 FFmpeg 生成素材，再传入真实启动回执和结果目录：
+
+```bash
+python3 -m scripts.acceptance.visual --prepare-fixtures --fixtures-dir runtime/visual-fixtures
+python3 -m scripts.acceptance.visual --case all --fixtures-dir runtime/visual-fixtures \
+  --launch-receipt runtime/<启动时间戳>/launch.json --output runtime/visual-acceptance
+python3 -m scripts.acceptance.responses --case all --fixtures-dir runtime/visual-fixtures \
+  --launch-receipt runtime/<启动时间戳>/launch.json --output runtime/responses-acceptance.json
+```
+
+视频 chunk 对照需分别启动关闭、开启两种模式：先运行 `visual-video-chunked-disabled`，再向开启模式的 runner 传入 `--chunk-baseline <关闭模式结果目录>/visual-video-chunked-disabled/case.json`。两侧使用相同请求并校验相同语义输出；开启模式还要求未缓存的输入超过 chunk 预算。`--case all` 会将当前启动模式不适用的 case 记为 `NOT_RUN`，完整验收需合并两种模式的结果。处理器时间映射和调度边界另做运行时结构检查。
+
+`previous_response_id` 验收需要启动时加上 `--responses-store`，启用进程内历史存储并使用单个 API 进程；GPU 的 TP / DP 配置不变。历史仅在该服务进程存活期间有效，重启会清空，默认关闭。
 
 catalog 的统计范围是 24 个 benchmark case、27 个 acceptance case；core 的 5 个 `needle_tokens` 是按目标长度动态追加的长上下文 case。编码器基准 `scripts.benchmarks.bench_encoding` 和 `scripts.hotpaths.check` 属于 CPU / 构建支持检查，结果分别写入 `docs/evidence/encoding-benchmark.json` 和 `docs/evidence/hotpaths-cpu.json`，不代表 GPU endpoint acceptance，也不重复放入上述 catalog。
 
