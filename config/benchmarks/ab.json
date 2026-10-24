@@ -220,6 +220,147 @@
           }
         }
       ]
+    },
+    {
+      "id": "chunk_budget",
+      "title": "Chunk budget",
+      "control": "chunk_budget_and_multimodal_chunking",
+      "runner": "scripts.benchmarks.chunk_budget",
+      "workload": {
+        "repeats": 3,
+        "seed": 1017,
+        "cells": [
+          {
+            "id": "text_1k_256_c1",
+            "kind": "text",
+            "isl": 1024,
+            "osl": 256,
+            "concurrency": 1
+          },
+          {
+            "id": "text_1k_128_c64",
+            "kind": "text",
+            "isl": 1024,
+            "osl": 128,
+            "concurrency": 64
+          },
+          {
+            "id": "text_1k_128_c128",
+            "kind": "text",
+            "isl": 1024,
+            "osl": 128,
+            "concurrency": 128
+          },
+          {
+            "id": "text_1k_128_c256",
+            "kind": "text",
+            "isl": 1024,
+            "osl": 128,
+            "concurrency": 256
+          },
+          {
+            "id": "text_16k_128_c16",
+            "kind": "text",
+            "isl": 16384,
+            "osl": 128,
+            "concurrency": 16
+          },
+          {
+            "id": "text_64k_1_c1",
+            "kind": "text",
+            "isl": 65536,
+            "osl": 1,
+            "concurrency": 1
+          },
+          {
+            "id": "text_260k_1_c1",
+            "kind": "text",
+            "isl": 260016,
+            "osl": 1,
+            "concurrency": 1
+          },
+          {
+            "id": "image4_128_c1",
+            "kind": "image",
+            "images": 4,
+            "osl": 128,
+            "concurrency": 1
+          },
+          {
+            "id": "image4_128_c4",
+            "kind": "image",
+            "images": 4,
+            "osl": 128,
+            "concurrency": 4
+          },
+          {
+            "id": "video32_128_c1",
+            "kind": "video",
+            "frames": 32,
+            "min_input_tokens": 16385,
+            "osl": 128,
+            "concurrency": 1
+          },
+          {
+            "id": "video32_128_c4",
+            "kind": "video",
+            "frames": 32,
+            "min_input_tokens": 16385,
+            "osl": 128,
+            "concurrency": 4
+          }
+        ]
+      },
+      "variants": [
+        {
+          "id": "32k_mm_off",
+          "launch": "1m",
+          "extra_launch": [
+            "--chunk",
+            "32768",
+            "--disable-chunked-mm-input",
+            "--responses-store",
+            "--dspark",
+            "5",
+            "--parallel",
+            "tp4dp2",
+            "--max-seqs",
+            "256"
+          ]
+        },
+        {
+          "id": "32k_mm_on",
+          "launch": "1m",
+          "extra_launch": [
+            "--chunk",
+            "32768",
+            "--no-disable-chunked-mm-input",
+            "--responses-store",
+            "--dspark",
+            "5",
+            "--parallel",
+            "tp4dp2",
+            "--max-seqs",
+            "256"
+          ]
+        },
+        {
+          "id": "16k_mm_on",
+          "launch": "1m",
+          "extra_launch": [
+            "--chunk",
+            "16384",
+            "--no-disable-chunked-mm-input",
+            "--responses-store",
+            "--dspark",
+            "5",
+            "--parallel",
+            "tp4dp2",
+            "--max-seqs",
+            "256"
+          ]
+        }
+      ]
     }
   ]
 }

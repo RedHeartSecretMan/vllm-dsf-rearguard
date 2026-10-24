@@ -1,6 +1,6 @@
 """Configuration A/B experiments defined in ``config/benchmarks/ab.json``.
 
-Every case changes one setting between variants. ``--plan`` prints how to start
+Each case declares its controlled settings and variants. ``--plan`` prints how to start
 each variant; ``--case``/``--variant`` measure one already running variant::
 
     python3 -m scripts.benchmarks.bench_ab --plan
@@ -46,6 +46,8 @@ def plan_lines(config: dict[str, Any]) -> list[str]:
     lines = []
     for case in config["cases"]:
         lines.append(f"{case['id']}  (control: {case['control']})")
+        if case.get("runner"):
+            lines.append(f"  runner: python3 -m {case['runner']}")
         for variant in case["variants"]:
             plan = variant_plan(config, variant)
             text = " ".join(plan["launch_args"])
@@ -125,6 +127,8 @@ def _prefill_reports(base, workload, timeout):
 
 def measure(base: str, case: dict[str, Any], variant: dict[str, Any], timeout: float):
     """Run the workloads this variant takes part in against the live service."""
+    if case.get("runner"):
+        raise SystemExit(f"{case['id']} uses python3 -m {case['runner']} --plan")
     workloads = case["workload"]
     names = variant.get("workloads") or list(workloads)
     reports: list[dict[str, Any]] = []
