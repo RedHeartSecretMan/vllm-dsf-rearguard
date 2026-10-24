@@ -182,8 +182,12 @@ class LaunchTests(unittest.TestCase):
         self.assertIn("--disable-chunked-mm-input", disabled)
 
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
-        with self.assertRaisesRegex(ValueError, "trained block"):
-            self.plan("--dspark", "7")
+        with patch("sys.stderr", new=io.StringIO()) as stderr:
+            with self.assertRaises(SystemExit) as error:
+                launch.parser().parse_args(["/model", "--dspark", "7"])
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn("invalid choice: 7 (choose from 0, 5)", stderr.getvalue())
+        self.assertEqual(launch.parser().parse_args(["/model"]).dspark, 5)
         self.assertNotIn("--speculative-config", self.plan("--dspark", "0")["command"])
 
     def test_new_hotpaths_are_opt_in_and_independently_recorded(self):

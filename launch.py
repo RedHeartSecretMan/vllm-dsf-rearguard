@@ -297,7 +297,10 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("model", type=Path)
     p.add_argument("--parallel", choices=("tp8", "tp4dp2"), default="tp4dp2")
-    p.add_argument("--dspark", type=int, choices=(0, 5, 7), default=5)
+    p.add_argument(
+        "--dspark", type=int, choices=(0, 5), default=5,
+        help="Speculative tokens: 0 disables DSpark; 5 enables it (default)",
+    )
     p.add_argument(
         "--context", type=int, choices=(262144, 524288, 1048576), default=262144
     )
