@@ -1,6 +1,6 @@
 # 基准结果
 
-本文记录 `v0.1.0` 在 `8×A100-SXM4-80GB / NVSwitch` 上完成的性能测试。所有实验使用同一套基础配置，分为两类基准和两类对照：
+本文记录 `v0.1.0` 在 `8×A100-SXM4-80GB / NVSwitch` 上完成的性能测试。实验分为两类基准和两类对照，配置与数据范围在各章节注明：
 
 | 类别 | 目的 | 章节 |
 |---|---|---|
@@ -11,7 +11,7 @@
 
 ## 基础配置
 
-历史文本/图文 benchmark 记录使用 `tp4dp2 / ep8`、DSpark k5、stacked-kv、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256`、`max-num-batched-tokens=16384`、`gpu-memory-utilization=0.90`。视觉推荐配置使用 32768 以容纳 32 帧视频；在此基础上按上下文上限分为两套配置：
+历史文本/图文 benchmark 记录使用 `tp4dp2 / ep8`、DSpark k5、stacked-kv、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256`、`max-num-batched-tokens=16384`、`gpu-memory-utilization=0.90`。默认关闭多模态分块的视觉配置使用 32768，以容纳 32 帧视频；当前服务显式使用 16K 并开启分块，对照见 [分块预算](#16k--32k-分块预算)。按上下文上限分为两套配置：
 
 | 配置 | 上下文上限 | 启动参数 | 适用场景 |
 |---|---:|---|---|
@@ -22,7 +22,7 @@
 
 ## 复现
 
-四类测试各有一份配置和一个脚本，配置记录每个 case 的启动参数、ISL / OSL、并发和 seed：
+四类测试由对应配置和入口组织，配置记录每个 case 的启动参数、ISL / OSL、并发和 seed：
 
 | 类别 | 配置 | 脚本 |
 |---|---|---|
@@ -39,6 +39,8 @@ python3 -m scripts.benchmarks.bench_ab --plan
 python3 -m scripts.benchmarks.bench_ab --case bounded_workspace --variant on --output runtime/bounded-on.json
 python3 -m scripts.benchmarks.bench_excluded --case chunk32768 --output runtime/excluded-chunk32768.json
 ```
+
+16K / 32K 的基础性能对照由 `ab.json` 中的 `chunk_budget` 定义，使用 `scripts.benchmarks.chunk_budget` 执行。该专项固定使用测试端口 `6688`，正式服务默认端口为 `6789`，完整结果和复现命令见 [16K / 32K 测试](chunk-budget.md)。
 
 全模型 PPL 在 1M 配置（未开启 `bounded-prefill`）的服务上运行，先生成 token 数据集，再逐窗打分：
 
@@ -246,7 +248,13 @@ Mixed 场景的两条流运行在同一个 vLLM endpoint、同一个 scheduler �
 
 ## 配置 A/B
 
-每次只改动一个配置项，其余保持不变，用来决定默认配置。
+对照组保持其余配置不变，用来选择服务参数。
+
+### 16K / 32K 分块预算
+
+当前视觉与 Responses 实现的对照采用同一镜像、同一冻结 workload，每个负载 3 轮，全部使用端口 `6688`。32K 分别关闭、开启多模态分块，16K 开启分块，共 11 个负载单元、99 轮、4,293 个计量请求，全部成功。
+
+16K 相对开启分块的 32K，视频 C4 输出 token 吞吐提高 4.55%，运行时报告的可用 KV 显存从 5.43 GiB 增至 10.50 GiB；260K 冷 prefill 输入 token 吞吐降低 3.40%，短文本 C256 输出 token 吞吐降低 4.42%。当前 1M 视觉服务选择 16K 分块，纯文本吞吐优先时可使用 32K。完整输入、输出、总 token 吞吐及延迟见 [详细结果](chunk-budget.md)。
 
 ### 通信与调度参数
 
@@ -287,7 +295,7 @@ KV cache 增加后吞吐下降，继续使用 0.90。
 
 ## 排除实验
 
-以下候选的结果是性能没有提升、精度准入未通过或在当前镜像上无法运行，默认配置不采用。260K 冷 prefill 的对照是 16K chunk 的 28.85 s。
+以下保留早期候选实验的结果。260K 冷 prefill 的对照是当时 16K chunk 的 28.85 s；其中 32K 的历史结论仅对应那次文本实验，当前视觉实现的 16K / 32K 选择见上方 [分块预算对照](#16k--32k-分块预算)。
 
 | 候选 | 测试 | 结果 | 结论 |
 |---|---|---|---|

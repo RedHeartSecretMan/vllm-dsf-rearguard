@@ -15,7 +15,9 @@
 
 ### 推荐配置
 
-262K 配置和 1M 配置都使用 `tp4dp2 / ep8`、DSpark k5、`stacked-kv`、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=32768`，以容纳视觉配置的最大视频 item。262K 配置适合高并发，1M 配置在此基础上增加 `--context 1048576 --experimental bounded-prefill`，适合容量型请求。完整命令见 [README](../README.md#推荐配置)。
+默认关闭多模态分块的 262K 配置和 1M 配置都使用 `tp4dp2 / ep8`、DSpark k5、`stacked-kv`、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=32768`，以容纳视觉配置的最大视频 item。262K 配置适合高并发，1M 配置在此基础上增加 `--context 1048576 --experimental bounded-prefill`，适合容量型请求。完整命令见 [README](../README.md#推荐配置)。
+
+当前 1M 视觉服务显式使用 `--chunk 16384 --no-disable-chunked-mm-input`，以增加 KV 容量。三组分块预算对照完成 4,293 个计量请求，详见 [16K / 32K 测试](chunk-budget.md)。正式服务默认端口为 `6789`，该专项测试使用 `6688`。
 
 ### 结果
 

@@ -52,7 +52,7 @@ python3 -m scripts.acceptance.responses --case all --fixtures-dir runtime/visual
 
 `previous_response_id` 验收需要启动时加上 `--responses-store`，启用进程内历史存储并使用单个 API 进程；GPU 的 TP / DP 配置不变。历史仅在该服务进程存活期间有效，重启会清空，默认关闭。
 
-catalog 的统计范围是 24 个 benchmark case、27 个 acceptance case；core 的 5 个 `needle_tokens` 是按目标长度动态追加的长上下文 case。编码器基准 `scripts.benchmarks.bench_encoding` 和 `scripts.hotpaths.check` 属于 CPU / 构建支持检查，结果分别写入 `docs/evidence/encoding-benchmark.json` 和 `docs/evidence/hotpaths-cpu.json`，不代表 GPU endpoint acceptance，也不重复放入上述 catalog。
+catalog 的统计范围是 25 个 benchmark case、27 个 acceptance case；`chunk_budget` A/B case 包含 11 个负载单元，core 的 5 个 `needle_tokens` 是按目标长度动态追加的长上下文 case。编码器基准 `scripts.benchmarks.bench_encoding` 和 `scripts.hotpaths.check` 属于 CPU / 构建支持检查，结果分别写入 `docs/evidence/encoding-benchmark.json` 和 `docs/evidence/hotpaths-cpu.json`，不代表 GPU endpoint acceptance，也不重复放入上述 catalog。
 
 ## 精度准入
 

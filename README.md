@@ -26,12 +26,11 @@ bash scripts/build.sh
 
 每个视频会生成稳定的 `vid_...` 身份，并在普通文本 wrapper 中记录 media IO 返回的逐帧采样时间和一个视频占位符；占位符随后展开为同顺序的图片帧 span。多轮历史重放相同媒体引用及参数时会得到相同身份，单独发送身份文本不会恢复缺失的媒体内容。
 
-默认使用 vLLM 原生的 `--disable-chunked-mm-input`，保持视觉 span 原子性。chunked 实验使用 `--no-disable-chunked-mm-input`，可以尝试更小的 `--chunk`。
-chunked 实验中，图片 span 仍由项目 scheduler 强制保持原子；只有视频项允许跨 chunk，由 runner 按当前窗口切取对应的视觉 embedding。
+默认使用 vLLM 原生的 `--disable-chunked-mm-input`，使单个多模态 item 在一个 prefill 窗口中处理。通过 `--no-disable-chunked-mm-input` 开启分块后，图片 span 仍保持完整，视频可以在完整帧之间跨窗口，由 runner 切取对应的视觉 embedding。
 
 ## 推荐配置
 
-两套视觉配置都使用 `tp4dp2 / ep8`、DSpark k5、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=32768`，以容纳 32 帧视频的最大视觉 item；不同点是上下文上限：262K 适合高并发，1M 适合容量型请求和长文任务。16K 仍可用于显式 chunked 或 text-only 实验。
+默认关闭多模态分块的两套视觉配置都使用 `tp4dp2 / ep8`、DSpark k5、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=32768`，以容纳 32 帧视频的最大视觉 item；不同点是上下文上限：262K 适合高并发，1M 适合容量型请求和长文任务。
 
 262K 配置：
 
@@ -45,6 +44,14 @@ python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 3
 ```bash
 python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 32768 \
   --context 1048576 --experimental stacked-kv --experimental bounded-prefill
+```
+
+当前 1M 视觉服务采用 16K 分块，以增加 KV 容量；启动命令如下。相对开启分块的 32K，视频 C4 吞吐提高约 4.5%，260K 冷 prefill 吞吐降低约 3.4%，完整对照见 [16K / 32K 测试](docs/chunk-budget.md)。
+
+```bash
+python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 16384 \
+  --context 1048576 --experimental stacked-kv --experimental bounded-prefill \
+  --no-disable-chunked-mm-input --responses-store --port 6789
 ```
 
 实验开关的作用与状态见 [项目架构](docs/architecture.md)。
