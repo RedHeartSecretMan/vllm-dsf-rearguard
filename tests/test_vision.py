@@ -95,6 +95,7 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         shift=0,
         offsets=(100,),
         chunked=False,
+        modality="image",
     ):
         path = FILES / "vllm/v1/core/sched/scheduler.py"
         schedule = functions(
@@ -110,6 +111,7 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         features = [
             SimpleNamespace(
                 identifier="same-image",
+                modality=modality,
                 mm_position=SimpleNamespace(
                     offset=offset,
                     length=20,
@@ -152,7 +154,19 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         # only the current token window while the encoder output is cached and
         # sliced by PlaceholderRange in the model runner.
         self.assertEqual(
-            self.invoke(90, 20, cache_hit=False, chunked=True)[1],
+            self.invoke(90, 20, cache_hit=False, chunked=True, modality="video")[1],
+            20,
+        )
+
+    def test_chunked_input_keeps_image_span_atomic(self):
+        self.assertEqual(
+            self.invoke(90, 20, cache_hit=False, chunked=True, modality="image")[1],
+            10,
+        )
+
+    def test_chunked_input_allows_video_span_to_cross_boundary(self):
+        self.assertEqual(
+            self.invoke(90, 20, cache_hit=False, chunked=True, modality="video")[1],
             20,
         )
 
