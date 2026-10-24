@@ -21,10 +21,21 @@ from __future__ import annotations
 import contextlib
 import functools
 import json
+from collections.abc import Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import regex as re
+from openai.types.responses import ToolChoiceCustom, ToolChoiceFunction
 
+from vllm.entrypoints.chat_utils import make_tool_call_id
+from vllm.entrypoints.generate.base.protocol import (
+    DeltaFunctionCall,
+    DeltaMessage,
+    DeltaToolCall,
+    FunctionCall,
+)
+from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionNamedToolChoiceParam
 from vllm.parser.engine.events import EventType
 from vllm.parser.engine.parser_engine import ParserEngine
 from vllm.parser.engine.parser_engine_config import (
@@ -35,6 +46,8 @@ from vllm.parser.engine.parser_engine_config import (
 from vllm.tool_parsers.utils import find_tool_properties
 
 if TYPE_CHECKING:
+    from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+    from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
     from vllm.tokenizers import TokenizerLike
     from vllm.tool_parsers.abstract_tool_parser import Tool
 
@@ -294,6 +307,101 @@ class DeepSeekV4Parser(ParserEngine):
             **kwargs,
         )
         self._arg_converter = self._convert_args
+        self._named_request = None
+        self._named_parser: ParserEngine | None = None
+        self._named_call_id: str | None = None
+        self._named_name_sent = False
+
+    @staticmethod
+    def _named_tool_name(request: ChatCompletionRequest | ResponsesRequest) -> str | None:
+        choice = request.tool_choice
+        if isinstance(choice, (ToolChoiceCustom, ToolChoiceFunction)):
+            return choice.name
+        if isinstance(choice, ChatCompletionNamedToolChoiceParam):
+            return choice.function.name
+        return None
+
+    def _named_json_parser(self, request) -> ParserEngine:
+        if self._named_request is not request:
+            # Named tool choice constrains output to bare JSON, unlike the
+            # model's automatic DSML calls. Keep only the initial reasoning
+            # transitions; markup inside a JSON string is ordinary argument
+            # data once reasoning has ended. Reuse the engine's lexer so an
+            # end-of-thinking marker can straddle streaming deltas.
+            config = replace(
+                self.parser_engine_config,
+                transitions={
+                    key: transition
+                    for key, transition in self.parser_engine_config.transitions.items()
+                    if key[0] == ParserState.REASONING
+                    and transition.next_state in (ParserState.REASONING, ParserState.CONTENT)
+                },
+            )
+            self._named_parser = ParserEngine(
+                self.model_tokenizer, request.tools, parser_engine_config=config
+            )
+            self._named_request = request
+            self._named_call_id = None
+            self._named_name_sent = False
+        assert self._named_parser is not None
+        return self._named_parser
+
+    def _named_tool_id(self, name: str) -> str:
+        if self._named_call_id is None:
+            state = self._stream_state
+            self._named_call_id = make_tool_call_id(
+                id_type=state.tool_call_id_type,
+                func_name=name,
+                idx=state.history_tool_call_cnt,
+            )
+            state.history_tool_call_cnt += 1
+        return self._named_call_id
+
+    def parse(
+        self, model_output: str, request: ChatCompletionRequest | ResponsesRequest,
+        enable_auto_tools: bool = False, model_output_token_ids: Sequence[int] = (),
+    ) -> tuple[str | None, str | None, list[FunctionCall] | None]:
+        name = self._named_tool_name(request)
+        if name is None:
+            self._named_request = self._named_parser = None
+            return super().parse(model_output, request, enable_auto_tools, model_output_token_ids)
+        self._initialize_history_tool_call_cnt(request)
+        parser = self._named_json_parser(request)
+        reasoning, content, _ = parser.parse(model_output, request, model_output_token_ids=model_output_token_ids)
+        self._reasoning_ended = parser.reasoning_ended
+        if not content or not content.strip():
+            return reasoning, None, None
+        return reasoning, None, [FunctionCall(
+            id=self._named_tool_id(name), name=name, arguments=content
+        )]
+
+    def parse_delta(
+        self, delta_text: str, delta_token_ids: list[int],
+        request: ChatCompletionRequest | ResponsesRequest,
+        prompt_token_ids: list[int] | None = None, *, finished: bool,
+    ) -> DeltaMessage | None:
+        name = self._named_tool_name(request)
+        if name is None:
+            self._named_request = self._named_parser = None
+            return super().parse_delta(delta_text, delta_token_ids, request, prompt_token_ids, finished=finished)
+        self._initialize_history_tool_call_cnt(request)
+        parser = self._named_json_parser(request)
+        delta = parser.parse_delta(delta_text, delta_token_ids, request, prompt_token_ids, finished=finished)
+        self._reasoning_ended = parser.reasoning_ended
+        if delta and delta.content:
+            first = not self._named_name_sent
+            delta.tool_calls = [DeltaToolCall(
+                index=0, id=self._named_tool_id(name) if first else None,
+                type="function" if first else None,
+                function=DeltaFunctionCall(name=name if first else None, arguments=delta.content),
+            )]
+            delta.content = None
+            self._named_name_sent = True
+        return delta
+
+    def count_reasoning_tokens(self, token_ids: Sequence[int]) -> int:
+        parser = self._named_parser
+        return parser.count_reasoning_tokens(token_ids) if parser else super().count_reasoning_tokens(token_ids)
 
     def _convert_args(self, raw_args: str, partial: bool) -> str:
         converter = self.parser_engine_config.arg_converter

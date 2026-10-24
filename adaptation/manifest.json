@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 28
+      "files": 29
     },
     {
       "name": "model_support",
@@ -99,7 +99,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
-      "patched_sha256": "e1f767b57f87a94e8ec898f481ddc92b39fc690e6ff42d92cceef1e5e9a8da2d",
+      "patched_sha256": "690963132a9968acabddd08fc6f6ab5790ce7f77a9d3c43b9ed05bf3c05c3281",
       "stage": "model_support"
     },
     {
@@ -123,7 +123,7 @@
     {
       "path": "vllm/parser/deepseek_v4.py",
       "base_sha256": "8de2aad7b4236ab7a23cfcee66f2fc76022a8c4485fdf2e7ad4046b5e7dd2427",
-      "patched_sha256": "bbd1b55bdf8a5b76be784450861f5a082b02f234570479b963d1364c41e0b1de",
+      "patched_sha256": "2165527beadb504dfe45384aa0f9aae790dcc73070c525322043173c8672e1a5",
       "stage": "base_integration"
     },
     {
@@ -244,6 +244,12 @@
       "path": "vllm/entrypoints/openai/responses/protocol.py",
       "base_sha256": "95608b698c923f92e8494a98d4db92ca1fdbdde11b4aad4181c8e6eabb36585e",
       "patched_sha256": "2ebe57b9825bc29748b5063e566adebcd60e472fd0d1fed19b0b9e19de41b8d5",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/serving.py",
+      "base_sha256": "dc720ca7038f73581f5576b0c5c56e086167fea3323f29f2d76bbacdb5b5b6db",
+      "patched_sha256": "9759c61b0c9a4831d9ac49436fb5473006fc1b86e56828398efd3fb272f6df3b",
       "stage": "base_integration"
     },
     {

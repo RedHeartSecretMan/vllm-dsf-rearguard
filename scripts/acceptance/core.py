@@ -177,7 +177,8 @@ def cases(vision):
             {
                 "role": "user",
                 "content": "Read the top image numbers. Return only JSON with fields "
-                "call_a and call_b containing each tool call ID's numbers in image order.",
+                "call_a and call_b containing arrays of integers for each tool call ID's "
+                "numbers in image order. Do not quote the integers.",
             },
         ]
         cases.append(

@@ -56,7 +56,7 @@ class SourcePayloadTests(unittest.TestCase):
         self.assertEqual(
             stages,
             {
-                "base_integration": 28,
+                "base_integration": 29,
                 "model_support": 10,
                 "sm80_acceleration": 4,
             },

@@ -7,7 +7,7 @@
 | 检查项 | 入口 | 结果 |
 |---|---|---|
 | 模型文件与权重校验 | `scripts/model_check.py` | 固定 ModelScope revision，83 个文件（含 48 个权重分片）大小与 SHA256 全部通过 |
-| 适配层原子安装 | `adaptation/install.py` | 42 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
+| 适配层原子安装 | `adaptation/install.py` | 43 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
 | 运行时源码复核 | `scripts/check_runtime.py` | 容器内已安装文件与源码清单指纹一致 |
 | CPU 合约与回归测试 | `unittest` | uv Python 3.10 本地运行 114 项并有 3 项环境跳过；pinned vLLM runtime 另外执行 Responses custom-tool 套件，包含视频抽样、逐帧时间映射、稳定视频身份、媒体 UUID 和部署限制契约 |
 | CPU 热路径检查 | `scripts/hotpaths/check.py` | 34 个用例全部通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影 |

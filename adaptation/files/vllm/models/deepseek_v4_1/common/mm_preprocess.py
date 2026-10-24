@@ -41,6 +41,7 @@ from vllm.multimodal.processing import (
     PromptUpdate,
     PromptUpdateDetails,
 )
+from vllm.multimodal.processing.processor import ResolvedPromptUpdate
 from vllm.tokenizers.video_prompt import (
     IMAGE_PLACEHOLDER,
     render_dummy_video_prompt,
@@ -503,6 +504,27 @@ class DeepseekV4VLDummyInputsBuilder(
 class DeepseekV4VLMultiModalProcessor(
     BaseMultiModalProcessor[DeepseekV4VLProcessingInfo]
 ):
+    def _get_video_target(self, item_idx: int) -> list[int]:
+        # The matching anchor is consumed with the placeholder; timestamps
+        # remain ordinary prompt text outside the visual span.
+        marker = self.info.get_tokenizer().encode(
+            video_frame_marker(item_idx) + "\n", add_special_tokens=False
+        )
+        return marker + [self.info.get_image_placeholder_token_id()]
+
+    def _recompute_cached_prompt_update(
+        self,
+        cached_update: ResolvedPromptUpdate,
+        new_item_idx: int,
+    ) -> ResolvedPromptUpdate:
+        update = super()._recompute_cached_prompt_update(cached_update, new_item_idx)
+        if update.modality == "video":
+            # Cache misses are processed as a compacted item list, and hits
+            # may have occupied a different position in an earlier request.
+            # Rebind the anchor to this request's original occurrence index.
+            update = update.with_target(self._get_video_target(new_item_idx))
+        return update
+
     def _get_mm_fields_config(
         self,
         hf_inputs: BatchFeature,
@@ -579,17 +601,6 @@ class DeepseekV4VLMultiModalProcessor(
                 [image_token_id] * types.numel(), image_token_id
             )
 
-        def get_video_target(item_idx: int) -> list[int]:
-            # The marker is an occurrence-specific matching anchor. It is
-            # consumed by the replacement, while the timestamp table remains
-            # in the prompt; keeping it out of the replacement avoids adding
-            # ordinary text tokens to the visual span length.
-            tokenizer = self.info.get_tokenizer()
-            marker = tokenizer.encode(
-                video_frame_marker(item_idx) + "\n", add_special_tokens=False
-            )
-            return marker + [image_token_id]
-
         return [
             PromptReplacement(
                 modality="image",
@@ -598,7 +609,7 @@ class DeepseekV4VLMultiModalProcessor(
             ),
             PromptReplacement(
                 modality="video",
-                target=get_video_target,
+                target=self._get_video_target,
                 replacement=get_video_replacement,
             ),
         ]

@@ -127,8 +127,11 @@ def build_case(
         count = int(case["images"])
         numbers = [((index * 7 + index // 3) % 3) + 1 for index in range(count)]
         content = [{"type": "text", "text": (
-            "Read the black digit in every image in supplied order. Preserve repetitions. "
-            'Return only JSON {"numbers": [integer, ...]}.'
+            f"This request contains exactly {count} images. "
+            "Read the black digit in each image once, in supplied order. Preserve repetitions. "
+            'Return only JSON {"numbers": [integer, ...]} '
+            f"with exactly {count} integers, one per image. "
+            "End your response after the closing JSON brace."
         )}]
         content.extend(image(number) for number in numbers)
         return base_body(model, content), {"numbers": numbers}, used
