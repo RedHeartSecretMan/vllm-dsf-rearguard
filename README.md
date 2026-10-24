@@ -25,6 +25,7 @@ bash scripts/build.sh
 多模态启动默认允许每个请求最多 64 张图片和 2 个视频。视频由 vLLM 按默认 1 FPS、最多 32 帧解码，再复用图像视觉塔；这属于服务侧扩展，不是模型官方的视频编码器。
 
 默认使用 vLLM 原生的 `--disable-chunked-mm-input`，保持视觉 span 原子性。chunked 实验使用 `--no-disable-chunked-mm-input`，可以尝试更小的 `--chunk`。
+chunked 实验中，图片 span 仍由项目 scheduler 强制保持原子；只有视频项允许跨 chunk，由 runner 按当前窗口切取对应的视觉 embedding。
 
 ## 推荐配置
 

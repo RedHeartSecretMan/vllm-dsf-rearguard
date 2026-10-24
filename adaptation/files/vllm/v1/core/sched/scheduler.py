@@ -1795,13 +1795,17 @@ class Scheduler(SchedulerInterface):
             num_encoder_embeds = mm_feature.mm_position.get_num_embeds()
             item_identifier = mm_feature.identifier
 
-            # Atomic image spans are a decoder-attention requirement, even
-            # when their encoder output is already cached or duplicated in
-            # this step. Check before either cache shortcut. Also cover an
-            # exact span start and a prefix-cache hit inside the span: all
-            # remaining bidirectional rows must fit in the current batch.
+            # Image spans are always atomic because their decoder attention is
+            # bidirectional. Video items are allowed to cross chunks in the
+            # opt-in path; their frame spans are sliced by the model runner.
+            # Check before either cache shortcut. Also cover an exact span
+            # start and a prefix-cache hit inside the span: all remaining
+            # image rows must fit in the current batch.
             if (
-                self.scheduler_config.disable_chunked_mm_input
+                (
+                    self.scheduler_config.disable_chunked_mm_input
+                    or mm_feature.modality == "image"
+                )
                 and not self.is_encoder_decoder
                 and (num_computed_tokens + num_new_tokens)
                 < (start_pos + num_encoder_tokens)
