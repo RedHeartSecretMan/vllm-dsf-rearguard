@@ -223,7 +223,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         from vllm.sampling_params import SamplingParams
 
         async def exercise(kind, with_logprobs=False, with_logging=False):
-            from openai.types.responses import response_text_delta_event
+            from vllm.logprobs import Logprob as SampleLogprob
 
             tools = [] if kind == "text" else [{"type": kind, "name": "record_text"}]
             if kind == "function":
@@ -233,7 +233,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
                 "tool_choice": {"type": kind, "name": "record_text"} if tools else "none",
                 "chat_template_kwargs": {"thinking": False}, "stream": True, "store": True,
                 "include": ["message.output_text.logprobs"] if with_logprobs else [],
-                "top_logprobs": 1 if with_logprobs else 0,
+                "top_logprobs": 2 if with_logprobs else 0,
             })
             parser, tokenizer = self.production_parser(request)
             text = "ACCEPTANCE_OK" if kind == "text" else (
@@ -254,26 +254,30 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
             server = object.__new__(OpenAIServingResponses)
             server.use_harmony = False
             server.parser = parser
+            server.return_tokens_as_token_ids = False
             server.enable_log_outputs = with_logging
             server.request_logger = Mock() if with_logging else None
             server._initialize_tool_sessions = AsyncMock()
             server.response_store = {}
             server.response_store_lock = asyncio.Lock()
             server._make_response_output_items = Mock(side_effect=AssertionError("stream must not reparse"))
-            logprob_batches = [[response_text_delta_event.Logprob(
-                token=text[index:index + 3], logprob=-0.25,
-                bytes=list(text[index:index + 3].encode()),
-                top_logprobs=[response_text_delta_event.LogprobTopLogprob(
-                    token="alternative", logprob=-2.0, bytes=list(b"alternative"),
-                )],
-            )] for index in range(0, len(text), 3)]
-            server._create_stream_response_logprobs = Mock(side_effect=logprob_batches)
+            expected_logprobs = [{
+                "token": text[index:index + 3], "logprob": -0.25, "bytes": list(text[index:index + 3].encode()),
+                "top_logprobs": [
+                    {"token": text[index:index + 3], "logprob": -0.25, "bytes": list(text[index:index + 3].encode())},
+                    {"token": "alternative", "logprob": -2.0, "bytes": list(b"alternative")},
+                ],
+            } for index in range(0, len(text), 3)]
 
             async def chunks():
                 for index in range(0, len(text), 3):
                     context.last_output = SimpleNamespace(
-                        outputs=[SimpleNamespace(text=text[index:index + 3], token_ids=[],
-                                                 logprobs=[{}] if with_logprobs else None,
+                        outputs=[SimpleNamespace(text=text[index:index + 3],
+                                                 token_ids=[100 + index] if with_logprobs else [],
+                                                 logprobs=[{
+                                                     100 + index: SampleLogprob(logprob=-0.25, rank=1, decoded_token=text[index:index + 3]),
+                                                     1000 + index: SampleLogprob(logprob=-2.0, rank=2, decoded_token="alternative"),
+                                                 }] if with_logprobs else None,
                                                  finish_reason="stop" if index + 3 >= len(text) else None)],
                         prompt_token_ids=[],
                     )
@@ -291,11 +295,10 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
             self.assertEqual([item.model_dump() for item in stored.output], items)
             server._make_response_output_items.assert_not_called()
             if with_logprobs:
-                expected = [item.model_dump() for batch in logprob_batches for item in batch]
                 text_done = next(event for event in events if event.type == "response.output_text.done")
-                self.assertEqual([item.model_dump() for item in text_done.logprobs], expected)
-                self.assertEqual(items[0]["content"][0]["logprobs"], expected)
-                self.assertEqual([item.model_dump() for item in stored.output[0].content[0].logprobs], expected)
+                self.assertEqual([item.model_dump() for item in text_done.logprobs], expected_logprobs)
+                self.assertEqual(items[0]["content"][0]["logprobs"], expected_logprobs)
+                self.assertEqual([item.model_dump() for item in stored.output[0].content[0].logprobs], expected_logprobs)
             if with_logging:
                 server.request_logger.log_outputs.assert_called_once_with(
                     request_id=request.request_id, outputs=text, output_token_ids=[],
@@ -334,6 +337,37 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         following = processor.close_current()
         self.assertEqual(following[0].logprobs, [])
         self.assertIsNone(following[2].item.content[0].logprobs)
+
+    def test_serving_logprob_builders_preserve_bytes_across_sdk_models(self):
+        from types import SimpleNamespace
+
+        from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
+        from vllm.logprobs import Logprob as SampleLogprob
+
+        server = object.__new__(OpenAIServingResponses)
+        server.return_tokens_as_token_ids = False
+        # Preserve the existing nonstream byte contract through the SDK's
+        # narrower delta model, including replacement-character token text.
+        samples = [{
+            100: SampleLogprob(logprob=-0.1, rank=1, decoded_token="\ufffd"),
+            101: SampleLogprob(logprob=-0.9, rank=2, decoded_token="alternative"),
+        }]
+        expected = [{"token": "\ufffd", "logprob": -0.1, "bytes": [239, 191, 189],
+                     "top_logprobs": [
+                         {"token": "\ufffd", "logprob": -0.1, "bytes": [239, 191, 189]},
+                         {"token": "alternative", "logprob": -0.9, "bytes": list(b"alternative")},
+                     ]}]
+        tokenizer = SimpleNamespace()
+        nonstream = server._create_response_logprobs([100], samples, tokenizer, 2)
+        output = self.build_output(reasoning=None, content="\ufffd", tool_calls=None, logprobs=nonstream)
+        self.assertEqual([item.model_dump() for item in output[0].content[0].logprobs], expected)
+        streamed = server._create_stream_response_logprobs([100], samples, tokenizer, 2)
+        self.assertEqual([item.model_dump() for item in streamed], expected)
+        processor = self.SimpleStreamingEventProcessor()
+        processor.open(self.StateType.CONTENT)
+        processor.emit_delta(self.DeltaMessage(content="\ufffd"), None, get_logprobs=lambda _: streamed)
+        done = processor.close_current()
+        self.assertEqual([item.model_dump() for item in done[-1].item.content[0].logprobs], expected)
 
     def test_custom_tool_call_and_output_round_trip(self):
         request = self.ResponsesRequest.model_validate(

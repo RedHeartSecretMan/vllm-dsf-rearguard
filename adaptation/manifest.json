@@ -249,7 +249,7 @@
     {
       "path": "vllm/entrypoints/openai/responses/serving.py",
       "base_sha256": "dc720ca7038f73581f5576b0c5c56e086167fea3323f29f2d76bbacdb5b5b6db",
-      "patched_sha256": "ab8ea11735dea6c612896fe08ca011947413b906bde6be138566ba7c80a8be0c",
+      "patched_sha256": "b311af39219913c88f11884b8d84cd02f074ca37d3675bb55da9932392f4351e",
       "stage": "base_integration"
     },
     {

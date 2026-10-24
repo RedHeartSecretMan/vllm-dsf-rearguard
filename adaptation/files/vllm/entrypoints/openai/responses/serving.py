@@ -963,9 +963,10 @@ class OpenAIServingResponses(GenerateBaseServing):
             response_text_delta_event.Logprob(
                 token=lg.token,
                 logprob=lg.logprob,
+                bytes=lg.bytes,
                 top_logprobs=[
                     response_text_delta_event.LogprobTopLogprob(
-                        token=tl.token, logprob=tl.logprob
+                        token=tl.token, logprob=tl.logprob, bytes=tl.bytes
                     )
                     for tl in lg.top_logprobs
                 ],
