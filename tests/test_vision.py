@@ -88,7 +88,14 @@ class VisionReferenceTests(unittest.TestCase):
 
 class AtomicImageSchedulingTests(unittest.TestCase):
     @staticmethod
-    def invoke(computed, new, cache_hit=True, shift=0, offsets=(100,)):
+    def invoke(
+        computed,
+        new,
+        cache_hit=True,
+        shift=0,
+        offsets=(100,),
+        chunked=False,
+    ):
         path = FILES / "vllm/v1/core/sched/scheduler.py"
         schedule = functions(
             path,
@@ -115,7 +122,9 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         state = SimpleNamespace(
             is_encoder_decoder=False,
             ec_connector=None,
-            scheduler_config=SimpleNamespace(disable_chunked_mm_input=True),
+            scheduler_config=SimpleNamespace(
+                disable_chunked_mm_input=not chunked
+            ),
             encoder_cache_manager=SimpleNamespace(
                 check_and_update_cache=lambda *a: cache_hit,
                 can_allocate=lambda *a: True,
@@ -136,6 +145,15 @@ class AtomicImageSchedulingTests(unittest.TestCase):
     def test_duplicate_image_cannot_bypass_atomic_boundary(self):
         self.assertEqual(
             self.invoke(90, 120, cache_hit=False, offsets=(100, 200))[1], 110
+        )
+
+    def test_chunked_input_allows_span_to_cross_prefill_boundary(self):
+        # With chunked multimodal input enabled, the scheduler may schedule
+        # only the current token window while the encoder output is cached and
+        # sliced by PlaceholderRange in the model runner.
+        self.assertEqual(
+            self.invoke(90, 20, cache_hit=False, chunked=True)[1],
+            20,
         )
 
 

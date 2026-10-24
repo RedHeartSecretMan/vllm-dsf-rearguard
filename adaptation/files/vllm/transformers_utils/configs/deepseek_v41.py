@@ -64,6 +64,10 @@ class DeepseekV41Config(PretrainedConfig):
         # prefill + sparse-SWA window widening); the base arch-config
         # convertor reads this config-level attribute.
         self.is_mm_prefix_lm = vision_n_layers > 0
+        # The pinned CUDA platform normally forces atomic multimodal spans for
+        # bidirectional prefix-LMs. This adapter has a chunk-safe span gather
+        # path, so expose the capability for the opt-in chunked-MM launcher.
+        self.supports_chunked_mm_input = vision_n_layers > 0
         # The sparse-SWA index kernels widen the window within image spans
         # in-kernel, so mm-prefix ranges longer than sliding_window must be
         # kept (they are only consumed by those kernels).

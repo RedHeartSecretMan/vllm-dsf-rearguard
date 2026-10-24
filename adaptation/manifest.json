@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 27
+      "files": 28
     },
     {
       "name": "model_support",
@@ -58,6 +58,12 @@
       "path": "vllm/model_executor/layers/sparse_attn_indexer.py",
       "base_sha256": "fb063e263c21b2aed10abf23c3db0d68756a90973b8f3731e61cf3cb615bec3f",
       "patched_sha256": "ec5a00c5bdc9ed47e5bca110b0ae5fb816a556a48c6d6e64366df1a42f7dcf17",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/platforms/cuda.py",
+      "base_sha256": "467344dd8461f20f2b9ded1053baa59cc3653ef60df7119f60e58dd498181439",
+      "patched_sha256": "f5284a0ad2252a5e2af35885fefc6644641384ffd1a0d112da196af729872663",
       "stage": "base_integration"
     },
     {
@@ -153,7 +159,7 @@
     {
       "path": "vllm/transformers_utils/configs/deepseek_v41.py",
       "base_sha256": "e0c7583efa9baa95302398daa61604e0f656ecf9f1b072c5715e5ed5a5c54599",
-      "patched_sha256": "260cc131e5607665fe830d0c80cd2a615391623357ee3ced3847956ad46cf621",
+      "patched_sha256": "95e88f0bd8ec6b5386fca1ac3ce2385c06db4362f6c52a111e2c136f8d8da4d4",
       "stage": "model_support"
     },
     {
