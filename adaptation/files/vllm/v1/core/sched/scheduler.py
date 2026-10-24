@@ -1804,7 +1804,7 @@ class Scheduler(SchedulerInterface):
             if (
                 (
                     self.scheduler_config.disable_chunked_mm_input
-                    or mm_feature.modality == "image"
+                    or getattr(mm_feature, "modality", None) == "image"
                 )
                 and not self.is_encoder_decoder
                 and (num_computed_tokens + num_new_tokens)
