@@ -10,7 +10,7 @@
     },
     {
       "name": "model_support",
-      "files": 9
+      "files": 10
     },
     {
       "name": "sm80_acceleration",
@@ -87,7 +87,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/amd/vl_model.py",
       "base_sha256": "7b9b65ebb9a3e466aed22b680618aa8b4556d97520690d00652fd5c65e10369c",
-      "patched_sha256": "a708d64900f8b10f31512cfb71d0377b4ebb87d4c82a93f92389562e05ad459b",
+      "patched_sha256": "246d72d1eac94fb2273fbe7a4d38d852643e484695985807e5f44f53841a51f4",
       "stage": "model_support"
     },
     {
@@ -99,7 +99,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
-      "patched_sha256": "490e1e80daa28d62ca22ef1b4a3a67729ab83639a2cb64dde1a4be1548cdb23a",
+      "patched_sha256": "d89ff16aa75cedc7b0c495856126971cbceac48e3bbc844409fc26c1c0fdb33c",
       "stage": "model_support"
     },
     {
@@ -117,7 +117,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/vl_model.py",
       "base_sha256": "ab698e56c83a345ea73e41359cab79b5e484ccfc116ed131347d50cdfe896251",
-      "patched_sha256": "c273916ebd135edf74ccfd466927cfcf53597142b2c74729f10fed6fe9b1bb7b",
+      "patched_sha256": "89de96bb691499369a7c03b4c99842385e22f5da8a5ef8e0fdeaffeb06f63b76",
       "stage": "model_support"
     },
     {
@@ -141,13 +141,19 @@
     {
       "path": "vllm/renderers/deepseek_v4.py",
       "base_sha256": "b989ea4b4240df0f5eeb832942d1aaa8e72e56743b45186b1b6145d7e7bbbd3a",
-      "patched_sha256": "d3f06cdc0308445ff7d38392aedbb9ccb2227136ec3f09b4d22a8bfccd96b23a",
+      "patched_sha256": "d9ed08a61c94af3926b0fde7d13e17a9de9821b7129d1831a2a334cd92b5c3a4",
+      "stage": "model_support"
+    },
+    {
+      "path": "vllm/tokenizers/video_prompt.py",
+      "base_sha256": null,
+      "patched_sha256": "c6b2278aa916f347e8c37a16b3aaaf3342cb168df6efd548b39f50ca9cba651c",
       "stage": "model_support"
     },
     {
       "path": "vllm/tokenizers/deepseek_v41.py",
       "base_sha256": "d6e9cbce7c5f127819452fa5d03dd4f22ad9f136dd202a54b5b31fe42402cae2",
-      "patched_sha256": "687a37c82becf61def00e4c464a9f5a80d3fd9a6537240fd9dc4f43e6bb44052",
+      "patched_sha256": "5f87bc88b0aa24e25d773ed341f296d4173993b977778ed94db98c3577144a34",
       "stage": "model_support"
     },
     {

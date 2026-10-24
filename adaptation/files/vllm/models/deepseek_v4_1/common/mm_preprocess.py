@@ -25,7 +25,6 @@ import numpy as np
 import torch
 from PIL import Image, ImageOps
 from transformers import BatchFeature
-
 from vllm.config.multimodal import (
     BaseDummyOptions,
     ImageDummyOptions,
@@ -42,30 +41,20 @@ from vllm.multimodal.processing import (
     PromptUpdate,
     PromptUpdateDetails,
 )
+from vllm.tokenizers.video_prompt import (
+    IMAGE_PLACEHOLDER,
+    render_dummy_video_prompt,
+)
 from vllm.transformers_utils.configs.deepseek_v41 import DeepseekV41Config
 
 IMAGE_START, IMAGE, IMAGE_NEW_LINE, IMAGE_END = range(4)
 
-IMAGE_PLACEHOLDER = "<｜deepseek_image｜>"
-
 # DeepSeek-V4.1's checkpoint contains an image tower only. Video requests
-# therefore use a duration-aware sequence of image frames. vLLM samples at
-# the requested FPS first; this ceiling is a defensive bound for direct
-# callers that provide all decoded frames themselves.
-VIDEO_SAMPLE_FPS = 1.0
+# therefore use a duration-aware sequence of image frames. The pinned vLLM
+# VideoMediaIO samples raw bytes before decoding; this processor consumes that
+# contract and does not perform a second sampling pass.
 VIDEO_MAX_FRAMES = 32
 VIDEO_MAX_TOKENS = 32768
-
-
-def sample_video_indices(frame_count: int, max_frames: int = VIDEO_MAX_FRAMES) -> list[int]:
-    """Return deterministic uniform-sampling indices for a video."""
-    if frame_count <= 0:
-        raise ValueError("Video input contains no frames")
-    if max_frames <= 0:
-        raise ValueError("max_frames must be positive")
-    if frame_count <= max_frames:
-        return list(range(frame_count))
-    return np.linspace(0, frame_count - 1, max_frames, dtype=np.int64).tolist()
 
 
 def video_frame_timestamps(
@@ -280,11 +269,9 @@ class DeepseekV4VLProcessor:
     ) -> tuple[list[Image.Image], list[float]]:
         """Normalize one vLLM video item into RGB PIL frames.
 
-        vLLM 0.13 passes decoded videos as a list of PIL images, NumPy
-        arrays, or tensors.  Supporting all three keeps the model path
+        vLLM 0.13 passes media-IO-sampled videos as a list of PIL images,
+        NumPy arrays, or tensors. Supporting all three keeps the model path
         independent from the URL/base64 decoder used by the OpenAI server.
-        A video is sampled uniformly here so every caller has the same
-        bounded visual-token cost.
         """
         metadata: Mapping[str, Any] | None = None
         if isinstance(video, tuple) and len(video) == 2 and isinstance(video[1], Mapping):
@@ -310,10 +297,14 @@ class DeepseekV4VLProcessor:
         else:
             raise ValueError(f"Unsupported video input type: {type(video)!r}")
 
+        if not frames:
+            raise ValueError("Video input contains no frames")
+        if len(frames) > max_frames:
+            raise ValueError(
+                f"Video media IO returned {len(frames)} frames; "
+                f"expected at most {max_frames} after pre-decode sampling"
+            )
         timestamps = video_frame_timestamps(len(frames), metadata)
-        selected = sample_video_indices(len(frames), max_frames)
-        frames = [frames[index] for index in selected]
-        timestamps = [timestamps[index] for index in selected]
 
         result: list[Image.Image] = []
         for frame in frames:
@@ -467,9 +458,13 @@ class DeepseekV4VLDummyInputsBuilder(
     BaseDummyInputsBuilder[DeepseekV4VLProcessingInfo]
 ):
     def get_dummy_text(self, mm_counts: Mapping[str, int]) -> str:
-        return IMAGE_PLACEHOLDER * (
-            mm_counts.get("image", 0) + mm_counts.get("video", 0)
+        image_count = mm_counts.get("image", 0)
+        video_count = mm_counts.get("video", 0)
+        image_text = "\n\n".join(IMAGE_PLACEHOLDER for _ in range(image_count))
+        video_text = "\n\n".join(
+            render_dummy_video_prompt(index) for index in range(video_count)
         )
+        return "\n\n".join(part for part in (image_text, video_text) if part)
 
     def get_dummy_mm_data(
         self,

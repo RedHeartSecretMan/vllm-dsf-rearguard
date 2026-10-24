@@ -9,6 +9,10 @@ from vllm.entrypoints.chat_utils import (
     parse_chat_messages_async,
 )
 from vllm.tokenizers.deepseek_v4 import DeepseekV4Tokenizer
+from vllm.tokenizers.video_prompt import (
+    attach_video_prompt_timestamps,
+    attach_video_uuids,
+)
 from vllm.utils.async_utils import make_async
 
 from .base import BaseRenderer
@@ -45,6 +49,8 @@ class DeepseekV4Renderer(BaseRenderer[DeepseekV4Tokenizer]):
         params: ChatParams,
     ) -> tuple[list[ConversationMessage], DictPrompt]:
         messages = self._order_v41_tool_media(messages)
+        if getattr(self.model_config.hf_config, "model_type", None) == "deepseek_v41":
+            messages = attach_video_uuids(messages)
         conversation, mm_data, mm_uuids = parse_chat_messages(
             messages,
             self.model_config,
@@ -52,6 +58,8 @@ class DeepseekV4Renderer(BaseRenderer[DeepseekV4Tokenizer]):
             media_io_kwargs=params.media_io_kwargs,
             mm_processor_kwargs=params.mm_processor_kwargs,
         )
+        if getattr(self.model_config.hf_config, "model_type", None) == "deepseek_v41":
+            messages = attach_video_prompt_timestamps(messages, mm_data)
 
         prompt_raw = self._apply_chat_template(
             conversation=conversation,
@@ -73,6 +81,8 @@ class DeepseekV4Renderer(BaseRenderer[DeepseekV4Tokenizer]):
         params: ChatParams,
     ) -> tuple[list[ConversationMessage], DictPrompt]:
         messages = self._order_v41_tool_media(messages)
+        if getattr(self.model_config.hf_config, "model_type", None) == "deepseek_v41":
+            messages = attach_video_uuids(messages)
         conversation, mm_data, mm_uuids = await parse_chat_messages_async(
             messages,
             self.model_config,
@@ -80,6 +90,8 @@ class DeepseekV4Renderer(BaseRenderer[DeepseekV4Tokenizer]):
             media_io_kwargs=params.media_io_kwargs,
             mm_processor_kwargs=params.mm_processor_kwargs,
         )
+        if getattr(self.model_config.hf_config, "model_type", None) == "deepseek_v41":
+            messages = attach_video_prompt_timestamps(messages, mm_data)
 
         prompt_raw = await self._apply_chat_template_async(
             conversation=conversation,

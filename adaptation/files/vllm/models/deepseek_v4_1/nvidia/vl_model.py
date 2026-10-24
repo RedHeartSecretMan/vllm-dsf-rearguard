@@ -21,7 +21,6 @@ from typing import Annotated
 
 import torch
 from torch import nn
-
 from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.model_executor.models.interfaces import (
     MultiModalEmbeddings,
@@ -90,8 +89,9 @@ class DeepseekV4VLVideoPixelInputs(TensorSchema):
     """
 
     # The vLLM multimodal batcher returns a tensor for one video and a list
-    # for a heterogeneous batch.  The service caps each request at one video,
-    # but accepting both forms keeps direct engine calls well-defined.
+    # for a heterogeneous batch.  The default service policy caps each
+    # request at two videos, but accepting both forms keeps direct engine calls
+    # well-defined.
     video_patches: torch.Tensor | list[torch.Tensor]
     video_vit_grid: torch.Tensor | list[torch.Tensor]
     video_llm_grid: torch.Tensor | list[torch.Tensor]

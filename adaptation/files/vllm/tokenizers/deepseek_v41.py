@@ -14,6 +14,7 @@ from .deepseek_v41_encoding import (
 )
 from .hf import HfTokenizer, get_cached_tokenizer
 from .protocol import TokenizerLike
+from .video_prompt import render_video_prompt
 
 
 def _normalize_messages(
@@ -50,12 +51,10 @@ def _normalize_messages(
                 elif part_type in ("image_url", "input_image", "image_pil"):
                     parts.append(IMAGE_PLACEHOLDER)
                 elif part_type in ("video_url", "input_video", "video"):
-                    # The DeepSeek-V4.1 vision tower has no temporal
-                    # projection.  A video is represented as an ordered,
-                    # bounded sequence of image spans by the multimodal
-                    # processor.  Keep one application-level placeholder;
-                    # the processor expands it to one span per sampled frame.
-                    parts.append(IMAGE_PLACEHOLDER)
+                    # Keep one application-level placeholder. The processor
+                    # expands it to ordered frame spans; the ordinary-text
+                    # wrapper gives every replayed video a stable identity.
+                    parts.append(render_video_prompt(block))
                 else:
                     raise ValueError(
                         "DeepSeek V4.1 supports text, image, and video content; "

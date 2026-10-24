@@ -57,7 +57,7 @@ class SourcePayloadTests(unittest.TestCase):
             stages,
             {
                 "base_integration": 28,
-                "model_support": 9,
+                "model_support": 10,
                 "sm80_acceleration": 4,
             },
         )

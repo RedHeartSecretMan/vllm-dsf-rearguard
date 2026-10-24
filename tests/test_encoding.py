@@ -8,6 +8,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -34,6 +35,9 @@ encoder = load(
 )
 reference = load("reference", ADAPTATION / "reference/encoder.py")
 installer = load("installer", ADAPTATION / "install.py")
+video_prompt = load(
+    "video_prompt", ADAPTATION / "files/vllm/tokenizers/video_prompt.py"
+)
 
 
 def calls():
@@ -71,13 +75,33 @@ def history(with_images=False):
     ]
 
 
+def video_message(url="clip.mp4", *, video_id=None):
+    """Build one video content block without depending on vLLM protocol types."""
+    video = {"url": url}
+    if video_id is not None:
+        video["video_id"] = video_id
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this video."},
+            {"type": "video_url", "video_url": video},
+        ],
+    }
+
+
+def video_ids(content):
+    """Extract the stable IDs emitted by the video-level text wrapper."""
+    return re.findall(r"\bvid_[A-Za-z0-9_-]{1,32}\b", content)
+
+
 def normalizer():
-    """Execute the unchanged SM80 baseline wrapper function without transformers/vLLM."""
+    """Execute the serving wrapper function without transformers/vLLM."""
     namespace = {
         "copy": copy,
         "Any": object,
         "ChatCompletionMessageParam": dict,
         "IMAGE_PLACEHOLDER": encoder.IMAGE_PLACEHOLDER,
+        "render_video_prompt": video_prompt.render_video_prompt,
     }
     return load_function(
         ADAPTATION / "files/vllm/tokenizers/deepseek_v41.py",
@@ -92,21 +116,120 @@ normalize = normalizer()
 
 
 class OfficialParityTests(unittest.TestCase):
-    def test_video_content_uses_one_application_placeholder(self):
+    def test_video_content_uses_stable_wrapper_and_one_placeholder(self):
+        messages = [video_message()]
+        normalized = normalize(messages)
+        content = normalized[0]["content"]
+        ids = video_ids(content)
+        self.assertEqual(len(set(ids)), 1)
+        self.assertRegex(content, r"Video ID:\s*vid_[A-Za-z0-9_-]{1,32}")
+        self.assertEqual(content.count(encoder.IMAGE_PLACEHOLDER), 1)
+        self.assertIn("chronological", content)
+        self.assertIn("End of video", content)
+
+        # Normalizing a replayed request must produce byte-identical wrapper
+        # text so the prompt and multimodal cache key remain stable.
+        self.assertEqual(normalize(copy.deepcopy(messages)), normalized)
+
+    def test_video_id_is_stable_across_history_replay_and_distinct_by_source(self):
+        first = normalize([video_message("first.mp4")])[0]["content"]
+        replay = normalize([video_message("first.mp4")])[0]["content"]
+        other = normalize([video_message("second.mp4")])[0]["content"]
+        self.assertEqual(video_ids(first), video_ids(replay))
+        self.assertNotEqual(video_ids(first), video_ids(other))
+
+        alias = normalize(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_video", "input_video": {"url": "first.mp4"}}
+                    ],
+                }
+            ]
+        )[0]["content"]
+        self.assertEqual(video_ids(first), video_ids(alias))
+
+        video_id = video_ids(first)[0]
+        history_messages = [
+            video_message("first.mp4"),
+            {"role": "assistant", "content": "I found the key event."},
+            {"role": "user", "content": f"Continue with {video_id}."},
+        ]
+        normalized_history = normalize(history_messages)
+        self.assertIn(video_id, normalized_history[0]["content"])
+        self.assertEqual(normalized_history[2]["content"], f"Continue with {video_id}.")
+        encoded = encoder.encode_messages(normalized_history, thinking_mode="chat")
+        self.assertIn(video_id, encoded)
+        self.assertIn(f"Continue with {video_id}.", encoded)
+
+    def test_explicit_video_id_is_preserved(self):
+        content = normalize(
+            [video_message("renamed.mp4", video_id="vid_abcdef123456")]
+        )[0]["content"]
+        self.assertIn("Video ID: vid_abcdef123456.", content)
+        self.assertEqual(content.count(encoder.IMAGE_PLACEHOLDER), 1)
+
+    def test_video_uuid_attachment_is_stable_and_non_mutating(self):
+        messages = [video_message("clip.mp4")]
+        annotated = video_prompt.attach_video_uuids(messages)
+        block = annotated[0]["content"][1]
+        self.assertEqual(block["uuid"], video_prompt.stable_video_id(messages[0]["content"][1]))
+        self.assertNotIn("uuid", messages[0]["content"][1])
+        replayed = video_prompt.attach_video_uuids(copy.deepcopy(messages))
+        self.assertEqual(replayed[0]["content"][1]["uuid"], block["uuid"])
+
+    def test_video_wrapper_maps_media_timestamps_to_frame_order(self):
+        messages = [video_message("long.mp4")]
+        media = [
+            (
+                [object()] * 32,
+                {"frames_indices": list(range(0, 64, 2)), "fps": 1.0},
+            )
+        ]
+        annotated = video_prompt.attach_video_prompt_timestamps(
+            messages, {"video": media}
+        )
+        content = normalize(annotated)[0]["content"]
+        self.assertEqual(content.count("Frame "), 32)
+        self.assertIn("Frame 1 at 0.000s.", content)
+        self.assertIn("Frame 32 at 62.000s.", content)
+        self.assertEqual(content.count(encoder.IMAGE_PLACEHOLDER), 1)
+
+    def test_multiple_videos_get_independent_wrappers(self):
         messages = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Describe this."},
-                    {"type": "video_url", "video_url": {"url": "clip.mp4"}},
+                    {"type": "text", "text": "Compare these videos."},
+                    {"type": "video_url", "video_url": {"url": "first.mp4"}},
+                    {"type": "video_url", "video_url": {"url": "second.mp4"}},
                 ],
             }
         ]
-        normalized = normalize(messages)
-        self.assertEqual(
-            normalized[0]["content"],
-            "Describe this.\n\n" + encoder.IMAGE_PLACEHOLDER,
-        )
+        content = normalize(messages)[0]["content"]
+        ids = video_ids(content)
+        self.assertEqual(len(set(ids)), 2)
+        self.assertEqual(content.count(encoder.IMAGE_PLACEHOLDER), 2)
+        unique_ids = list(dict.fromkeys(ids))
+        self.assertLess(content.index(unique_ids[0]), content.index(unique_ids[1]))
+        for video_id in unique_ids:
+            self.assertGreaterEqual(content.count(video_id), 2)
+
+    def test_image_and_plain_video_id_text_do_not_get_video_wrapper(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Refer to vid_abcdef123456."},
+                    {"type": "image_url", "image_url": {"url": "image.png"}},
+                ],
+            }
+        ]
+        content = normalize(messages)[0]["content"]
+        self.assertNotIn("Video ID:", content)
+        self.assertNotIn("End of video", content)
+        self.assertEqual(content.count(encoder.IMAGE_PLACEHOLDER), 1)
 
     def test_checkpoint_cases_through_tokenizer_normalization(self):
         manifest = json.loads((ROOT / "manifests/model-files.json").read_text())
@@ -230,7 +353,7 @@ class OfficialParityTests(unittest.TestCase):
             hashlib.sha256(
                 (ADAPTATION / "files/vllm/tokenizers/deepseek_v41.py").read_bytes()
             ).hexdigest(),
-            "687a37c82becf61def00e4c464a9f5a80d3fd9a6537240fd9dc4f43e6bb44052",
+            "5f87bc88b0aa24e25d773ed341f296d4173993b977778ed94db98c3577144a34",
         )
 
     def test_text_and_tool_histories_match_reference(self):
@@ -406,6 +529,8 @@ class RendererOrderTests(unittest.TestCase):
             "parse_chat_messages": parse,
             "parse_chat_messages_async": parse_async,
             "parse_dec_only_prompt": lambda text: {"prompt": text},
+        "attach_video_uuids": video_prompt.attach_video_uuids,
+        "attach_video_prompt_timestamps": video_prompt.attach_video_prompt_timestamps,
         }
         renderer_type = load_class(
             ADAPTATION / "files/vllm/renderers/deepseek_v4.py",

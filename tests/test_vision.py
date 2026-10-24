@@ -26,19 +26,15 @@ def functions(path, names, namespace=None):
 
 
 class VisionReferenceTests(unittest.TestCase):
-    def test_video_sampling_is_bounded_and_uses_decoder_timestamps(self):
+    def test_video_media_metadata_uses_decoder_timestamps(self):
         source = FILES / "vllm/models/deepseek_v4_1/common/mm_preprocess.py"
         functions = load_functions(
             source,
-            ("sample_video_indices", "video_frame_timestamps"),
-            {"np": np, "Sequence": Sequence, "VIDEO_MAX_FRAMES": 32},
+            ("video_frame_timestamps",),
+            {"np": np, "Sequence": Sequence},
             anywhere=True,
         )
-        sample = functions["sample_video_indices"]
         timestamps = functions["video_frame_timestamps"]
-        self.assertEqual(len(sample(60)), 32)
-        self.assertEqual(sample(60)[0], 0)
-        self.assertEqual(sample(60)[-1], 59)
         self.assertEqual(
             timestamps(3, {"frames_indices": [0, 10, 20], "fps": 10}),
             [0.0, 1.0, 2.0],
@@ -96,6 +92,7 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         offsets=(100,),
         chunked=False,
         modality="image",
+        frame_lengths=(10, 10),
     ):
         path = FILES / "vllm/v1/core/sched/scheduler.py"
         schedule = functions(
@@ -114,8 +111,10 @@ class AtomicImageSchedulingTests(unittest.TestCase):
                 modality=modality,
                 mm_position=SimpleNamespace(
                     offset=offset,
-                    length=20,
-                    get_num_embeds=lambda: 20,
+                    length=sum(frame_lengths) if modality == "video" else 20,
+                    get_num_embeds=lambda: sum(frame_lengths)
+                    if modality == "video"
+                    else 20,
                     get_embeds_indices_in_range=lambda a, b: (a, b),
                 ),
             )
@@ -134,7 +133,7 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         )
         if modality == "video":
             features[0].data = {
-                "video_frame_span_lengths": SimpleNamespace(data=[10, 10])
+                "video_frame_span_lengths": SimpleNamespace(data=list(frame_lengths))
             }
         req = SimpleNamespace(has_encoder_inputs=True, mm_features=features)
         return schedule(state, req, computed, new, 1024, shift)
@@ -178,6 +177,31 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         self.assertEqual(
             self.invoke(90, 15, cache_hit=False, chunked=True, modality="video")[1],
             10,
+        )
+
+    def test_chunked_video_uses_actual_multi_frame_boundaries(self):
+        frame_lengths = (10, 12, 10)
+        self.assertEqual(
+            self.invoke(
+                90,
+                25,
+                cache_hit=False,
+                chunked=True,
+                modality="video",
+                frame_lengths=frame_lengths,
+            )[1],
+            20,
+        )
+        self.assertEqual(
+            self.invoke(
+                90,
+                32,
+                cache_hit=False,
+                chunked=True,
+                modality="video",
+                frame_lengths=frame_lengths,
+            )[1],
+            32,
         )
 
 

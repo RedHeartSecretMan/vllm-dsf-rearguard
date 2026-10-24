@@ -89,7 +89,7 @@ def sse_metrics(response, started: float) -> dict[str, Any]:
     output_tokens = int(usage["completion_tokens"])
     input_tokens = int(usage["prompt_tokens"])
     decode_span = last - first
-    intervals = [b - a for a, b in zip(event_times, event_times[1:])]
+    intervals = [b - a for a, b in zip(event_times, event_times[1:], strict=False)]
     return {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
