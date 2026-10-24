@@ -65,7 +65,9 @@ def image_body(case: dict[str, Any], model: str) -> tuple[dict[str, Any], list[i
     }, numbers
 
 
-def video_body(case: dict[str, Any], model: str, path: Path) -> dict[str, Any]:
+def video_body(
+    case: dict[str, Any], model: str, path: Path, video_id_prefix: str = "vid_acceptance"
+) -> dict[str, Any]:
     videos = int(case.get("videos", 1))
     content: list[dict[str, Any]] = [
         {
@@ -74,27 +76,79 @@ def video_body(case: dict[str, Any], model: str, path: Path) -> dict[str, Any]:
         }
     ]
     for index in range(videos):
-        content.append(video_part(path, f"vid_acceptance_{index + 1}"))
+        content.append(video_part(path, f"{video_id_prefix}_{index + 1}"))
     if case["kind"] == "mixed":
         content.insert(1, image(1))
         content.append(image(2))
     return {"model": model, "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256}
 
 
-def run_case(base_url: str, model: str, case: dict[str, Any], video: Path | None, timeout: float) -> dict[str, Any]:
+def run_case(
+    base_url: str,
+    model: str,
+    case: dict[str, Any],
+    video: Path | None,
+    launch_receipt: Path | None,
+    timeout: float,
+) -> dict[str, Any]:
+    launch_arg = case.get("launch_arg")
+    if launch_arg:
+        if launch_receipt is None:
+            raise ValueError(f"{case['id']} requires --launch-receipt to verify {launch_arg}")
+        receipt = json.loads(launch_receipt.read_text())
+        command = receipt.get("command", [])
+        if launch_arg not in command:
+            raise ValueError(f"launch receipt does not contain required argument {launch_arg}")
+    if case["kind"] != "image" and launch_receipt is None:
+        raise ValueError(f"{case['id']} requires --launch-receipt for media limits")
+    if launch_receipt is not None:
+        receipt = json.loads(launch_receipt.read_text())
+        command = receipt.get("command", [])
+        try:
+            limit = json.loads(command[command.index("--limit-mm-per-prompt") + 1])
+        except (ValueError, IndexError, json.JSONDecodeError) as error:
+            raise ValueError("launch receipt lacks valid multimodal limits") from error
+        if int(case.get("images", 0)) > int(limit.get("image", 0)):
+            raise ValueError("case image count exceeds the launch receipt limit")
+        if case["kind"] != "image":
+            try:
+                media = json.loads(command[command.index("--media-io-kwargs") + 1])
+            except (ValueError, IndexError, json.JSONDecodeError) as error:
+                raise ValueError("launch receipt lacks valid media IO policy") from error
+            if int(case.get("videos", 1)) > int(limit.get("video", {}).get("count", 0)):
+                raise ValueError("case video count exceeds the launch receipt limit")
+            if int(case.get("max_frames", 0)) > int(limit.get("video", {}).get("num_frames", 0)):
+                raise ValueError("case frame count exceeds the launch receipt limit")
+            if "fps" in case and media.get("video", {}).get("fps") != case["fps"]:
+                raise ValueError("case fps differs from the launch receipt media policy")
     expected_numbers = None
     if case["kind"] == "image":
         body, expected_numbers = image_body(case, model)
     else:
         if video is None:
             raise ValueError("video cases require --video PATH")
-        body = video_body(case, model, video)
+        prefix = "vid_acceptance_history" if case["kind"] == "video_history" else "vid_acceptance"
+        body = video_body(case, model, video, prefix)
+        if case["kind"] == "video_history":
+            replay = video_body(case, model, video, prefix)
+            if body["messages"][0]["content"] != replay["messages"][0]["content"]:
+                raise RuntimeError("video history payload is not stable across replay")
+            video_id = f"{prefix}_1"
+            body["messages"].extend(
+                [
+                    {"role": "assistant", "content": f"I inspected video {video_id}."},
+                    {"role": "user", "content": f"Continue analysis of {video_id}."},
+                ]
+            )
     result = request(base_url, body, timeout)
     message = result["choices"][0]["message"]
     text = message.get("content") or ""
     if not text and not message.get("tool_calls"):
         raise RuntimeError("visual response contains no assistant output")
     report: dict[str, Any] = {"status": "PASS", "case": case["id"], "response_chars": len(text)}
+    if case["kind"] == "video_history":
+        report["history_video_id"] = "vid_acceptance_history_1"
+        report["assertions"] = list(case.get("requires", []))
     if case["kind"] == "image":
         try:
             report["parsed"] = parse_object(text)
@@ -115,6 +169,7 @@ def main() -> int:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--video", type=Path, help="local video fixture for video cases")
+    parser.add_argument("--launch-receipt", type=Path)
     parser.add_argument("--timeout", type=float, default=600)
     args = parser.parse_args()
     config = load("visual")
@@ -124,7 +179,14 @@ def main() -> int:
     cases = select(config, args.case)
     if len(cases) != 1:
         parser.error("--case is required when executing a visual case")
-    report = run_case(args.base_url, args.model, cases[0], args.video, args.timeout)
+    report = run_case(
+        args.base_url,
+        args.model,
+        cases[0],
+        args.video,
+        args.launch_receipt,
+        args.timeout,
+    )
     print(json.dumps(report, indent=2))
     return 0
 

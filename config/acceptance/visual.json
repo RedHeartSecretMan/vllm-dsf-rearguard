@@ -16,8 +16,8 @@
     {"id": "visual-video-long", "kind": "video", "videos": 1, "max_frames": 32, "fps": 1},
     {"id": "visual-video-two-items", "kind": "video", "videos": 2, "max_frames": 32},
     {"id": "visual-image-video-image-order", "kind": "mixed", "images": 2, "videos": 1},
-    {"id": "visual-video-chunked-disabled", "kind": "video", "requires": "--disable-chunked-mm-input"},
-    {"id": "visual-video-chunked-frame-boundary", "kind": "video", "requires": "--no-disable-chunked-mm-input"},
-    {"id": "visual-video-history-uuid", "kind": "video_history", "requires": "stable video_id and content-part uuid"}
+    {"id": "visual-video-chunked-disabled", "kind": "video", "launch_arg": "--disable-chunked-mm-input"},
+    {"id": "visual-video-chunked-frame-boundary", "kind": "video", "launch_arg": "--no-disable-chunked-mm-input"},
+    {"id": "visual-video-history-uuid", "kind": "video_history", "requires": ["stable video_id", "content-part uuid"]}
   ]
 }

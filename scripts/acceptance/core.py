@@ -8,6 +8,7 @@ import re
 import time
 from pathlib import Path
 
+from scripts.acceptance.catalog import load, print_cases
 from scripts.bench_common import DEFAULT_BASE_URL, MODEL, json_request, verify_endpoint
 from scripts.quality_metrics import (
     aggregate_speculative,
@@ -219,14 +220,20 @@ def needle_case(base, target):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--list", action="store_true", help="list catalog cases")
     p.add_argument("--base-url", default=DEFAULT_BASE_URL)
     p.add_argument("--text-only", action="store_true")
     p.add_argument(
         "--needle-tokens", type=int, choices=(1024, 32768, 131072, 523000, 1047000)
     )
-    p.add_argument("--launch-receipt", type=Path, required=True)
-    p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--launch-receipt", type=Path)
+    p.add_argument("--output", type=Path)
     args = p.parse_args()
+    if args.list:
+        print_cases(load("core"))
+        return 0
+    if args.launch_receipt is None or args.output is None:
+        p.error("--launch-receipt and --output are required unless --list is used")
     if args.output.exists():
         p.error("Output exists; use a fresh evidence path")
     launch = json.loads(args.launch_receipt.read_text())

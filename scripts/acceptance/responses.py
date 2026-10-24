@@ -127,6 +127,46 @@ def run_stream(base_url: str, model: str, prompt: str, timeout: float) -> dict[s
     return {"status": "PASS", "events": len(events), "stream": True}
 
 
+def run_previous_response(
+    base_url: str, model: str, prompt: str, timeout: float
+) -> dict[str, Any]:
+    """Exercise the two-request history path with a real response ID."""
+    first = run(base_url, model, prompt, timeout)
+    response_id = first.get("response_id")
+    if not response_id:
+        raise RuntimeError("Responses response did not return an id")
+    payload = {
+        "model": model,
+        "previous_response_id": response_id,
+        "input": [{"role": "user", "content": "Continue the analysis."}],
+        "max_output_tokens": 32,
+        "temperature": 0,
+        "stream": False,
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    request = urllib.request.Request(
+        base_url.rstrip("/") + "/v1/responses",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode(errors="replace")
+        raise RuntimeError(
+            f"Responses previous_response_id returned HTTP {error.code}: {detail}"
+        ) from error
+    if result.get("object") != "response" or not isinstance(result.get("output"), list):
+        raise RuntimeError("Responses previous_response_id returned an invalid response")
+    return {
+        "status": "PASS",
+        "previous_response_id": response_id,
+        "response_id": result.get("id"),
+        "output_items": len(result["output"]),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list", action="store_true", help="list catalog cases")
@@ -151,6 +191,8 @@ def main() -> int:
         report = run_basic(args.base_url, args.model, args.prompt, args.timeout)
     elif case["id"] == "responses-custom-tool-stream":
         report = run_stream(args.base_url, args.model, args.prompt, args.timeout)
+    elif case["id"] == "responses-previous-response-id-tools":
+        report = run_previous_response(args.base_url, args.model, args.prompt, args.timeout)
     else:
         report = run(args.base_url, args.model, args.prompt, args.timeout)
     report["case"] = case["id"]

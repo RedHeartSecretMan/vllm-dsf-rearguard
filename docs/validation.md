@@ -36,7 +36,9 @@
 | responses | [`responses.json`](../config/acceptance/responses.json) | `scripts.acceptance.responses` | Responses 基础请求、custom-tool history 和 streaming |
 | quality | [`quality.json`](../config/acceptance/quality.json) | `scripts.acceptance.quality` | PPL 和 GPQA Diamond 质量评测计划 |
 
-每个入口都支持 `--list`；视觉视频 case 还需要通过 `--video` 提供验收用视频文件。
+每个入口都支持 `--list`；视觉视频 case 需要同时通过 `--video` 提供验收用视频文件、通过 `--launch-receipt` 校验启动时的媒体限制和 chunk 参数。
+
+catalog 的统计范围是 24 个 benchmark case、27 个 acceptance case；core 的 5 个 `needle_tokens` 是按目标长度动态追加的长上下文 case。编码器基准 `scripts.benchmarks.bench_encoding` 和 `scripts.hotpaths.check` 属于 CPU / 构建支持检查，结果分别写入 `docs/evidence/encoding-benchmark.json` 和 `docs/evidence/hotpaths-cpu.json`，不代表 GPU endpoint acceptance，也不重复放入上述 catalog。
 
 ## 精度准入
 

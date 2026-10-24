@@ -76,6 +76,19 @@ class CaseCatalogTests(unittest.TestCase):
             )
         self.assertFalse(set(benchmark_ids) & set(acceptance_ids))
 
+    def test_benchmark_catalogs_name_their_runner(self):
+        expected = {
+            "regular": "scripts.benchmarks.bench_regular",
+            "long_tail": "scripts.benchmarks.bench_long_tail",
+            "ab": "scripts.benchmarks.bench_ab",
+            "excluded": "scripts.benchmarks.bench_excluded",
+        }
+        for name, runner in expected.items():
+            with self.subTest(catalog=name):
+                config = read(f"config/benchmarks/{name}.json")
+                self.assertEqual(config["runner"], runner)
+                importlib.import_module(runner)
+
     def test_visual_limits_match_runtime_contract(self):
         limits = read("config/acceptance/visual.json")["limits"]
         self.assertEqual(

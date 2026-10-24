@@ -1,5 +1,6 @@
 {
   "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "runner": "scripts.benchmarks.bench_long_tail",
   "launch": {
     "1m": [
       "--context",
