@@ -171,13 +171,12 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(media, {"video": {"num_frames": 32, "fps": 1}})
         self.assertIn("--disable-chunked-mm-input", command)
 
-        chunked = self.plan("--chunked-mm-input", "true", "--chunk", "16384")["command"]
+        chunked = self.plan("--no-disable-chunked-mm-input", "--chunk", "16384")["command"]
         self.assertNotIn("--disable-chunked-mm-input", chunked)
+        self.assertIn("--no-disable-chunked-mm-input", chunked)
         self.assertEqual(chunked[chunked.index("--max-num-batched-tokens") + 1], "16384")
-        disabled = self.plan("--chunked-mm-input", "false")["command"]
+        disabled = self.plan("--disable-chunked-mm-input")["command"]
         self.assertIn("--disable-chunked-mm-input", disabled)
-        with self.assertRaises(SystemExit):
-            launch.parser().parse_args(["/tmp/model", "--chunked-mm-input", "maybe"])
 
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with self.assertRaisesRegex(ValueError, "trained block"):

@@ -29,15 +29,6 @@ KV_TRANSFER_CONNECTORS = {
 KV_TRANSFER_ROLES = {"kv_both", "kv_producer", "kv_consumer"}
 
 
-def parse_bool(value: str) -> bool:
-    normalized = value.strip().lower()
-    if normalized in {"true", "1", "yes", "on"}:
-        return True
-    if normalized in {"false", "0", "no", "off"}:
-        return False
-    raise argparse.ArgumentTypeError("expected true or false")
-
-
 def load_kv_transfer_config(value: str | None) -> dict | None:
     """Load and validate the small public surface of vLLM KV transfer config.
 
@@ -227,8 +218,11 @@ def make_plan(args):
             "--media-io-kwargs",
             '{"video":{"num_frames":32,"fps":1}}',
         ]
-        if not args.chunked_mm_input:
-            serve.append("--disable-chunked-mm-input")
+        serve.append(
+            "--disable-chunked-mm-input"
+            if args.disable_chunked_mm_input
+            else "--no-disable-chunked-mm-input"
+        )
     if args.eager:
         serve += ["--enforce-eager"]
     command = [
@@ -271,7 +265,7 @@ def make_plan(args):
         "context": args.context,
         "kernels": args.kernels,
         "text_only": args.text_only,
-        "chunked_mm_input": args.chunked_mm_input,
+        "disable_chunked_mm_input": args.disable_chunked_mm_input,
         "gpu_validation": "NOT_RUN",
         "kv_transfer_config": kv_transfer,
         "kv_transfer_config_sha256": (
@@ -327,11 +321,10 @@ def parser():
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")
     p.add_argument("--text-only", action="store_true")
     p.add_argument(
-        "--chunked-mm-input",
-        type=parse_bool,
-        default=False,
-        metavar="{true,false}",
-        help="Allow multimodal spans to cross prefill chunks; default: false.",
+        "--disable-chunked-mm-input",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Keep multimodal spans atomic; use --no-disable-chunked-mm-input to opt in.",
     )
     p.add_argument(
         "--experimental",
