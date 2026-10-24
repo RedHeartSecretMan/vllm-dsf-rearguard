@@ -97,6 +97,7 @@ class DeepseekV4VLVideoPixelInputs(TensorSchema):
     video_llm_grid: torch.Tensor | list[torch.Tensor]
     video_types: torch.Tensor | list[torch.Tensor]
     video_timestamps: torch.Tensor | list[torch.Tensor]
+    video_frame_span_lengths: torch.Tensor | list[torch.Tensor]
 
 
 def _make_deepseek_v4_vl_weights_mapper(
@@ -226,6 +227,7 @@ class DeepseekV41ForCausalLM(nn.Module, SupportsMultiModal, SupportsPP, Supports
             video_llm_grid=kwargs.pop("video_llm_grid"),
             video_types=kwargs.pop("video_types"),
             video_timestamps=kwargs.pop("video_timestamps"),
+            video_frame_span_lengths=kwargs.pop("video_frame_span_lengths"),
         )
 
     def _encode_image(

@@ -132,6 +132,10 @@ class AtomicImageSchedulingTests(unittest.TestCase):
                 can_allocate=lambda *a: True,
             ),
         )
+        if modality == "video":
+            features[0].data = {
+                "video_frame_span_lengths": SimpleNamespace(data=[10, 10])
+            }
         req = SimpleNamespace(has_encoder_inputs=True, mm_features=features)
         return schedule(state, req, computed, new, 1024, shift)
 
@@ -168,6 +172,12 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         self.assertEqual(
             self.invoke(90, 20, cache_hit=False, chunked=True, modality="video")[1],
             20,
+        )
+
+    def test_chunked_video_rolls_back_inside_a_frame(self):
+        self.assertEqual(
+            self.invoke(90, 15, cache_hit=False, chunked=True, modality="video")[1],
+            10,
         )
 
 

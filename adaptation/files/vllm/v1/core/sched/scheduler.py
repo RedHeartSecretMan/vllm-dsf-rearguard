@@ -1795,24 +1795,68 @@ class Scheduler(SchedulerInterface):
             num_encoder_embeds = mm_feature.mm_position.get_num_embeds()
             item_identifier = mm_feature.identifier
 
+            video_frame_boundaries = None
+            if getattr(mm_feature, "modality", None) == "video":
+                data = getattr(mm_feature, "data", None)
+                field = (
+                    data.get("video_frame_span_lengths")
+                    if data is not None and "video_frame_span_lengths" in data
+                    else None
+                )
+                lengths = getattr(field, "data", None)
+                if hasattr(lengths, "tolist"):
+                    lengths = lengths.tolist()
+                while isinstance(lengths, list) and lengths and isinstance(
+                    lengths[0], list
+                ):
+                    lengths = lengths[0]
+                if isinstance(lengths, (list, tuple)) and lengths:
+                    total = 0
+                    boundaries = []
+                    for length in lengths:
+                        total += int(length)
+                        boundaries.append(total)
+                    if total == num_encoder_tokens:
+                        video_frame_boundaries = boundaries
+
             # Image spans are always atomic because their decoder attention is
-            # bidirectional. Video items are allowed to cross chunks in the
-            # opt-in path; their frame spans are sliced by the model runner.
+            # bidirectional. Video items may cross chunks only at complete
+            # frame boundaries in the opt-in path; their frame spans are
+            # sliced by the model runner.
             # Check before either cache shortcut. Also cover an exact span
             # start and a prefix-cache hit inside the span: all remaining
             # image rows must fit in the current batch.
+            modality = getattr(mm_feature, "modality", None)
+            video_needs_atomic_fallback = modality == "video" and not video_frame_boundaries
+            current_end = num_computed_tokens + num_new_tokens + shift_computed_tokens
+            video_crosses_frame = False
+            video_frame_end = None
+            if video_frame_boundaries and start_pos < current_end < start_pos + num_encoder_tokens:
+                relative_end = current_end - start_pos
+                video_frame_end = max(
+                    (boundary for boundary in video_frame_boundaries if boundary <= relative_end),
+                    default=0,
+                )
+                video_crosses_frame = video_frame_end < relative_end
             if (
                 (
                     self.scheduler_config.disable_chunked_mm_input
-                    or getattr(mm_feature, "modality", None) == "image"
+                    or modality == "image"
+                    or video_needs_atomic_fallback
+                    or video_crosses_frame
                 )
                 and not self.is_encoder_decoder
                 and (num_computed_tokens + num_new_tokens)
                 < (start_pos + num_encoder_tokens)
             ):
                 # Preserve the EAGLE look-ahead boundary when rolling back.
+                rollback_end = (
+                    start_pos + video_frame_end
+                    if video_crosses_frame and video_frame_end is not None
+                    else start_pos
+                )
                 num_new_tokens = max(
-                    0, start_pos - (num_computed_tokens + shift_computed_tokens)
+                    0, rollback_end - (num_computed_tokens + shift_computed_tokens)
                 )
                 break
 

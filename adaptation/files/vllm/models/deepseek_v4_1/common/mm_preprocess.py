@@ -368,6 +368,7 @@ class DeepseekV4VLProcessor:
         video_llm_grid: list[torch.Tensor] = []
         video_types: list[torch.Tensor] = []
         video_timestamps: list[torch.Tensor] = []
+        video_frame_span_lengths: list[torch.Tensor] = []
         for video in videos or []:
             frame_patches = []
             frame_vit_grid = []
@@ -387,6 +388,9 @@ class DeepseekV4VLProcessor:
             video_llm_grid.append(torch.tensor(frame_llm_grid, dtype=torch.int64))
             video_types.append(torch.cat(frame_types))
             video_timestamps.append(torch.tensor(timestamps, dtype=torch.float32))
+            video_frame_span_lengths.append(
+                torch.tensor([types.numel() for types in frame_types], dtype=torch.int64)
+            )
 
         if not patches_list and not video_patches:
             return BatchFeature({})
@@ -408,6 +412,7 @@ class DeepseekV4VLProcessor:
                     "video_llm_grid": video_llm_grid,
                     "video_types": video_types,
                     "video_timestamps": video_timestamps,
+                    "video_frame_span_lengths": video_frame_span_lengths,
                 }
             )
         return BatchFeature(result)
@@ -544,6 +549,9 @@ class DeepseekV4VLMultiModalProcessor(
                         "video", keep_on_cpu=True
                     ),
                     "video_timestamps": MultiModalFieldConfig.batched(
+                        "video", keep_on_cpu=True
+                    ),
+                    "video_frame_span_lengths": MultiModalFieldConfig.batched(
                         "video", keep_on_cpu=True
                     ),
                 }
