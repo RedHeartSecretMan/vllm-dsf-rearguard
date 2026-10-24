@@ -169,6 +169,11 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(limit, {"image": 64, "video": {"count": 2, "num_frames": 32}})
         media = json.loads(command[command.index("--media-io-kwargs") + 1])
         self.assertEqual(media, {"video": {"num_frames": 32, "fps": 1}})
+        self.assertIn("--disable-chunked-mm-input", command)
+
+        chunked = self.plan("--chunked-mm-input", "--chunk", "16384")["command"]
+        self.assertNotIn("--disable-chunked-mm-input", chunked)
+        self.assertEqual(chunked[chunked.index("--max-num-batched-tokens") + 1], "16384")
 
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with self.assertRaisesRegex(ValueError, "trained block"):

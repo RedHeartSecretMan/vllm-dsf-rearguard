@@ -217,8 +217,9 @@ def make_plan(args):
             '{"image":64,"video":{"count":2,"num_frames":32}}',
             "--media-io-kwargs",
             '{"video":{"num_frames":32,"fps":1}}',
-            "--disable-chunked-mm-input",
         ]
+        if not args.chunked_mm_input:
+            serve.append("--disable-chunked-mm-input")
     if args.eager:
         serve += ["--enforce-eager"]
     command = [
@@ -261,6 +262,7 @@ def make_plan(args):
         "context": args.context,
         "kernels": args.kernels,
         "text_only": args.text_only,
+        "chunked_mm_input": args.chunked_mm_input,
         "gpu_validation": "NOT_RUN",
         "kv_transfer_config": kv_transfer,
         "kv_transfer_config_sha256": (
@@ -315,6 +317,11 @@ def parser():
     p.add_argument("--kernels", choices=("control", "optimized"), default="optimized")
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")
     p.add_argument("--text-only", action="store_true")
+    p.add_argument(
+        "--chunked-mm-input",
+        action="store_true",
+        help="Allow multimodal spans to cross prefill chunks; keep off by default.",
+    )
     p.add_argument(
         "--experimental",
         action="append",
