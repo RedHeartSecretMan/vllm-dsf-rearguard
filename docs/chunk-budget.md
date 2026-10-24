@@ -161,6 +161,6 @@ python3 -m scripts.benchmarks.chunk_budget --profile 32k_mm_off \
 
 ## 最终服务
 
-测试结束后，容器 `dsf-main-64b48b3` 使用 16K 分块配置启动于 `http://127.0.0.1:6789`，`/health` 和 `/v1/models` 均检查通过。`6688` 的测试容器已停止。新镜像为 `sha256:c1a37e834eecdb77a89c5b6b182d96b6ef3492f2b417af94abd7752fc1b3c520`，与三组测试镜像的 43 个适配源码文件指纹一致；本轮修改限于启动端口、benchmark runner、配置和文档。
+测试结束后，容器 `dsf-main-64b48b3` 使用 16K 分块配置启动于 `http://127.0.0.1:6789`，`/health` 和 `/v1/models` 均检查通过。`6688` 的测试容器已停止。新镜像为 `sha256:c1a37e834eecdb77a89c5b6b182d96b6ef3492f2b417af94abd7752fc1b3c520`，与三组测试镜像的 43 个适配源码文件指纹一致；本轮修改限于启动端口、benchmark runner、配置、测试与文档。
 
 本机使用 uv 管理的 Python 3.10，164 项测试完成、8 项因环境条件跳过；镜像构建中 178 项测试完成、5 项跳过。Ruff、配置与文档引用检查通过。正式端口只执行健康检查和模型列表查询，性能数据均来自测试端口。

@@ -193,7 +193,13 @@ class LaunchTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as error:
                 launch.parser().parse_args(["/model", "--dspark", "7"])
         self.assertEqual(error.exception.code, 2)
-        self.assertIn("invalid choice: 7 (choose from 0, 5)", stderr.getvalue())
+        self.assertIn("--dspark", stderr.getvalue())
+        for tokens in (0, 5):
+            with self.subTest(tokens=tokens):
+                self.assertEqual(
+                    launch.parser().parse_args(["/model", "--dspark", str(tokens)]).dspark,
+                    tokens,
+                )
         self.assertEqual(launch.parser().parse_args(["/model"]).dspark, 5)
         self.assertNotIn("--speculative-config", self.plan("--dspark", "0")["command"])
 
