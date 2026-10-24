@@ -11,7 +11,7 @@
 - `tp8 / ep8` 与 `tp4dp2 / ep8` 两种启动配置。
 - DSpark k5、CUDA Graph、FP8 KV cache、稀疏 MLA、EPLB 和 EP8 通信路径。
 - 长上下文 indexer 工作区约束、query-sharded decode metadata 和 DSpark KV 投影。
-- 四类 benchmark 配置与 runner（常规场景、长尾场景、配置 A/B、排除实验）、全模型 PPL 评测和精度准入工具。
+- 四类 benchmark 配置与 runner（常规场景、长尾场景、配置 A/B、排除实验），以及按 core、visual、responses、quality 分类的 GPU 验收配置与 runner；全模型 PPL 和 GPQA 质量评测单独归入 quality。
 
 ### 推荐配置
 

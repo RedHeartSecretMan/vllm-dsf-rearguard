@@ -5,7 +5,6 @@ import unittest
 from unittest.mock import patch
 
 import launch
-from scripts import bench_ab, bench_excluded, bench_long_tail, bench_regular
 from scripts.bench_common import (
     CONFIG_DIR,
     build_prompts,
@@ -18,6 +17,7 @@ from scripts.bench_common import (
     summarize,
     verify_cache,
 )
+from scripts.benchmarks import bench_ab, bench_excluded, bench_long_tail, bench_regular
 
 NAMES = ("regular", "long_tail", "ab", "excluded")
 
@@ -345,8 +345,8 @@ class CapacityAndKvTransferTests(unittest.TestCase):
             }
 
         with (
-            patch("scripts.bench_excluded.token_pool", return_value=list(range(10, 400))),
-            patch("scripts.bench_excluded.json_request", side_effect=respond),
+            patch("scripts.benchmarks.bench_excluded.token_pool", return_value=list(range(10, 400))),
+            patch("scripts.benchmarks.bench_excluded.json_request", side_effect=respond),
         ):
             report = bench_excluded.run_request_smoke("http://x", config, case, 1)
         self.assertEqual(sent[0], sent[1])

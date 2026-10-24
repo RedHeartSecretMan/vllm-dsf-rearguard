@@ -1,0 +1,23 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "runner": "scripts.acceptance.quality",
+  "description": "Quality measurements kept separate from functional endpoint acceptance.",
+  "cases": [
+    {
+      "id": "quality-ppl-wikitext",
+      "kind": "ppl",
+      "dataset": "wikitext-2-raw-v1:test",
+      "window_tokens": 2048,
+      "request_form": "echo",
+      "top_k": 1,
+      "command": "scripts.acceptance.ppl_wikitext then scripts.acceptance.ppl_score"
+    },
+    {
+      "id": "quality-gpqa-diamond",
+      "kind": "gpqa",
+      "dataset": "GPQA Diamond",
+      "questions": 198,
+      "command": "external evaluator; archive the complete 198/198 receipt"
+    }
+  ]
+}

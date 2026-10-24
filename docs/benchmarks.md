@@ -26,25 +26,25 @@
 
 | 类别 | 配置 | 脚本 |
 |---|---|---|
-| 常规场景 | [`regular.json`](../config/benchmarks/regular.json) | [`bench_regular.py`](../scripts/bench_regular.py) |
-| 长尾场景 | [`long_tail.json`](../config/benchmarks/long_tail.json) | [`bench_long_tail.py`](../scripts/bench_long_tail.py) |
-| 配置 A/B | [`ab.json`](../config/benchmarks/ab.json) | [`bench_ab.py`](../scripts/bench_ab.py) |
-| 排除实验 | [`excluded.json`](../config/benchmarks/excluded.json) | [`bench_excluded.py`](../scripts/bench_excluded.py) |
+| 常规场景 | [`regular.json`](../config/benchmarks/regular.json) | [`bench_regular.py`](../scripts/benchmarks/bench_regular.py) |
+| 长尾场景 | [`long_tail.json`](../config/benchmarks/long_tail.json) | [`bench_long_tail.py`](../scripts/benchmarks/bench_long_tail.py) |
+| 配置 A/B | [`ab.json`](../config/benchmarks/ab.json) | [`bench_ab.py`](../scripts/benchmarks/bench_ab.py) |
+| 排除实验 | [`excluded.json`](../config/benchmarks/excluded.json) | [`bench_excluded.py`](../scripts/benchmarks/bench_excluded.py) |
 
 脚本不带 `--case` 时列出该类的全部 case 和对应的启动参数。先按 case 的启动参数用 `launch.py` 启动服务，再运行脚本，结果写入新的 JSON 文件：
 
 ```bash
-python3 -m scripts.bench_regular --case matrix_concurrent --output runtime/matrix-concurrent.json
-python3 -m scripts.bench_ab --plan
-python3 -m scripts.bench_ab --case bounded_workspace --variant on --output runtime/bounded-on.json
-python3 -m scripts.bench_excluded --case chunk32768 --output runtime/excluded-chunk32768.json
+python3 -m scripts.benchmarks.bench_regular --case matrix_concurrent --output runtime/matrix-concurrent.json
+python3 -m scripts.benchmarks.bench_ab --plan
+python3 -m scripts.benchmarks.bench_ab --case bounded_workspace --variant on --output runtime/bounded-on.json
+python3 -m scripts.benchmarks.bench_excluded --case chunk32768 --output runtime/excluded-chunk32768.json
 ```
 
 全模型 PPL 在 1M 配置（未开启 `bounded-prefill`）的服务上运行，先生成 token 数据集，再逐窗打分：
 
 ```bash
-python3 -m scripts.ppl_wikitext MODEL_DIR --output runtime/wikitext-2-test.jsonl
-python3 -m scripts.ppl_score runtime/wikitext-2-test.jsonl --request-form echo --top-k 1 --output runtime/ppl-wikitext-2-test.json
+python3 -m scripts.acceptance.ppl_wikitext MODEL_DIR --output runtime/wikitext-2-test.jsonl
+python3 -m scripts.acceptance.ppl_score runtime/wikitext-2-test.jsonl --request-form echo --top-k 1 --output runtime/ppl-wikitext-2-test.json
 ```
 
 ## 指标口径

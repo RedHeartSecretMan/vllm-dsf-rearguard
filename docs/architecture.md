@@ -41,10 +41,10 @@
 | 256 | 87.919 / 7.333 ms | 87.604 / 7.312 ms | 12.0× |
 | 1024 | 1341.594 / 28.453 ms | 1347.609 / 29.625 ms | 45.5–47.2× |
 
-结果仅覆盖 Python prompt 编码阶段，原始采样见 [目标机回执](evidence/encoding-benchmark.json)。复现时用 `scripts/bench_encoding.py` 对比两份编码器，`--baseline` 指向优化前的编码器文件，`--candidate` 默认是适配层里的 `deepseek_v41_encoding.py`，每组结果都会与 `adaptation/reference/encoder.py` 逐字比对：
+结果仅覆盖 Python prompt 编码阶段，原始采样见 [目标机回执](evidence/encoding-benchmark.json)。复现时用 `scripts/benchmarks/bench_encoding.py` 对比两份编码器，`--baseline` 指向优化前的编码器文件，`--candidate` 默认是适配层里的 `deepseek_v41_encoding.py`，每组结果都会与 `adaptation/reference/encoder.py` 逐字比对：
 
 ```bash
-python3 scripts/bench_encoding.py --baseline /path/to/baseline_encoder.py \
+python3 scripts/benchmarks/bench_encoding.py --baseline /path/to/baseline_encoder.py \
   --output runtime/encoding-benchmark.json
 ```
 

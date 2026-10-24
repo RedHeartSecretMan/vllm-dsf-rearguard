@@ -2,8 +2,8 @@
 
 import unittest
 
-from scripts.acceptance import response_digest
-from scripts.quality_gate import compare
+from scripts.acceptance.core import response_digest
+from scripts.acceptance.quality_gate import compare
 
 
 def receipt(digest="a" * 64, status="PASS"):

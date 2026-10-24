@@ -4,7 +4,7 @@ and the ISL/OSL matrix, as defined in ``config/benchmarks/regular.json``.
 Run one case against a service that was started with that case's ``launch``
 arguments, for example::
 
-    python3 -m scripts.bench_regular --case matrix_concurrent --output out.json
+    python3 -m scripts.benchmarks.bench_regular --case matrix_concurrent --output out.json
 """
 
 from __future__ import annotations

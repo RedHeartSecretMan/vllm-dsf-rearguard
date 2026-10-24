@@ -124,7 +124,7 @@
         }
       ],
       "control": "dense candidate-MQA path; compare output_sha256 per request",
-      "run": "measure each workload with scripts.bench_regular against this launch and again against the dense path, then compare output_sha256 per request",
+      "run": "measure each workload with scripts.benchmarks.bench_regular against this launch and again against the dense path, then compare output_sha256 per request",
       "note": "recorded container also ran prefill-throttle"
     },
     {

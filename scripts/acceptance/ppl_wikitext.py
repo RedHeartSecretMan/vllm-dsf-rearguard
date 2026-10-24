@@ -1,12 +1,12 @@
-"""Prepare the wikitext-2 test split for ``scripts.ppl_score`` as a token JSONL file.
+"""Prepare the wikitext-2 test split for ``scripts.acceptance.ppl_score`` as a token JSONL file.
 
 The published PPL run joined the detokenized non-empty documents with a blank
 line, tokenized the text once with the model's tokenizer and scored
 non-overlapping 2048-token windows. This script reproduces that preparation and
 also writes the word and byte counts needed for word and byte perplexity::
 
-    python3 -m scripts.ppl_wikitext MODEL_DIR --output runtime/wikitext-2-test.jsonl
-    python3 -m scripts.ppl_score runtime/wikitext-2-test.jsonl --request-form echo \\
+    python3 -m scripts.acceptance.ppl_wikitext MODEL_DIR --output runtime/wikitext-2-test.jsonl
+    python3 -m scripts.acceptance.ppl_score runtime/wikitext-2-test.jsonl --request-form echo \\
         --top-k 1 --output runtime/ppl-wikitext-2-test.json
 
 It needs ``datasets``, ``transformers`` and ``lm_eval`` (for the detokenizer).

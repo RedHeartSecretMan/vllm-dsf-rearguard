@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts import ppl_score, ppl_wikitext
+from scripts.acceptance import ppl_score, ppl_wikitext
 
 
 class PplTests(unittest.TestCase):

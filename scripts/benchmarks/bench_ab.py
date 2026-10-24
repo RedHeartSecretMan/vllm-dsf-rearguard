@@ -3,8 +3,8 @@
 Every case changes one setting between variants. ``--plan`` prints how to start
 each variant; ``--case``/``--variant`` measure one already running variant::
 
-    python3 -m scripts.bench_ab --plan
-    python3 -m scripts.bench_ab --case bounded_workspace --variant on --output out.json
+    python3 -m scripts.benchmarks.bench_ab --plan
+    python3 -m scripts.benchmarks.bench_ab --case bounded_workspace --variant on --output out.json
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ def measure(base: str, case: dict[str, Any], variant: dict[str, Any], timeout: f
         if "long_tail_case" in workload:
             raise SystemExit(
                 f"{case['id']} runs the long-tail case {workload['long_tail_case']!r}: "
-                f"python3 -m scripts.bench_long_tail --case {workload['long_tail_case']}"
+                f"python3 -m scripts.benchmarks.bench_long_tail --case {workload['long_tail_case']}"
             )
         if workload["kind"] in {"random_burst", "token_burst", "chat_burst"}:
             reports += _burst_reports(base, workload, variant, timeout)

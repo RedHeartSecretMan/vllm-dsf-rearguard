@@ -1,0 +1,16 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "runner": "scripts.acceptance.core",
+  "description": "Core text, tool and image acceptance cases used for output digest comparison.",
+  "cases": [
+    {"id": "arithmetic-thinking-False", "kind": "text", "thinking": false},
+    {"id": "arithmetic-thinking-True", "kind": "text", "thinking": true},
+    {"id": "tool-call", "kind": "tool_call", "thinking": false},
+    {"id": "tool-continuation-reversed", "kind": "tool_history", "thinking": true},
+    {"id": "vision-1-images", "kind": "image", "image_count": 1},
+    {"id": "vision-2-images", "kind": "image", "image_count": 2},
+    {"id": "vision-4-images", "kind": "image", "image_count": 4},
+    {"id": "vision-reversed-tool-id", "kind": "image_tool_history"}
+  ],
+  "needle_tokens": [1024, 32768, 131072, 523000, 1047000]
+}

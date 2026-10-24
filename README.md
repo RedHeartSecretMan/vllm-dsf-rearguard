@@ -62,7 +62,7 @@ python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 3
 | 单请求 Decode TPS | `279.5 token/s` |
 | GPQA Diamond，4 轮平均 | `91.54%` |
 
-测试配置、指标口径和完整数据见 [基准结果](docs/benchmarks.md)，验证范围见 [验证记录](docs/validation.md)，版本内容见 [发布说明](docs/release.md)。Responses 协议 smoke 可运行 `python3 scripts/responses_smoke.py --help` 查看入口。
+测试配置、指标口径和完整数据见 [基准结果](docs/benchmarks.md)，验证范围见 [验证记录](docs/validation.md)，版本内容见 [发布说明](docs/release.md)。四类 GPU 验收入口位于 `config/acceptance/` 和 `scripts/acceptance/`；Responses smoke 可运行 `python3 -m scripts.acceptance.responses --list` 查看入口。
 
 ## 本地检查
 
@@ -80,10 +80,10 @@ CUDA_VISIBLE_DEVICES= python3 -m scripts.hotpaths.check
 
 ```text
 adaptation/   vLLM 源码覆盖、编码器与图像处理器参考实现、安装清单
-config/       运行时环境变量与四类 benchmark 配置
+config/       运行时环境变量、四类 benchmark 配置和四类 GPU 验收配置
 docs/         架构、基准、验证和发布说明，以及原始回执
 manifests/    模型文件清单与基础镜像锁定
-scripts/      构建、校验、验收、基准、PPL 工具和 CPU 热路径检查（hotpaths/）
+scripts/      构建、校验、验收、基准、PPL 工具和 CPU 热路径检查（按 acceptance/、benchmarks/、hotpaths/ 分类）
 tests/        CPU 合约、协议、视觉和 benchmark 测试
 launch.py     启动计划生成与服务启动入口
 ruff.toml     代码检查配置

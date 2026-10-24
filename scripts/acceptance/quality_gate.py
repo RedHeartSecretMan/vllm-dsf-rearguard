@@ -1,7 +1,7 @@
 """Compare deterministic acceptance evidence before enabling an optimization.
 
 The gate is deliberately transport independent: it consumes two JSON receipts
-from ``scripts/acceptance.py`` and checks that every case passed and produced
+from ``scripts.acceptance.core`` and checks that every case passed and produced
 the same assistant-visible digest.  It also reports speculative-decoding
 metadata without inventing an acceptance rate when the backend does not expose
 the counters.

@@ -2,7 +2,7 @@
 
 import unittest
 
-from scripts.benchmark_matrix import summarize
+from scripts.benchmarks.benchmark_matrix import summarize
 
 
 class BenchmarkMatrixMetricTests(unittest.TestCase):

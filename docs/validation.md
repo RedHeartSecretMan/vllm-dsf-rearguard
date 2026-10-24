@@ -20,27 +20,40 @@
 - **官方编码器对齐**：官方 5 组输入夹具覆盖 40 种思考模式与 `reasoning_effort` 组合，编码输出逐字匹配。
 - **原生多模态**：单图、多图、缓存命中图片、重复图片及完整 1024-token 视觉预算边界全部通过。
 - **视频扩展**：`video_url` 由 pinned vLLM media IO 在解码前按默认 1 FPS、`num_frames=32` 选取最多 32 个均匀时间点；每个视频保留稳定的 `vid_...` 身份和全局文本 wrapper，并将同一身份写入 vLLM content-part `uuid`，再展开为按时间顺序排列的图片帧 span。启动配置限制为每请求最多 64 张图片和 2 个视频。仓库内覆盖媒体抽样、帧边界、wrapper 和 UUID 合约；GPU endpoint 回执需单独归档。多轮重放相同媒体引用及参数时身份保持稳定，但仍需要同时保留媒体输入或可用的视觉/KV cache。
-- **Responses 协议**：custom-tool history 和 streaming custom-tool events 的适配层回归已纳入测试；`scripts/responses_smoke.py` 提供 pinned runtime 的 endpoint smoke 入口，实际 endpoint 回执需单独归档。
+- **Responses 协议**：custom-tool history 和 streaming custom-tool events 的适配层回归已纳入测试；`scripts.acceptance.responses` 提供 pinned runtime 的 endpoint smoke 入口，实际 endpoint 回执需单独归档。
 - **分布式与投机解码**：`tp8 / ep8` 与 `tp4dp2 / ep8`、CUDA Graph、FP8 MLA KV cache、DSpark k5、EPLB 和 EP8 通信路径均完成目标机启动验收，并通过文本、工具和图文 smoke。
 - **实验开关**：`decode-metadata`、`ragged-reuse`、`stacked-kv` 分别完成目标机启动并通过文本和工具 smoke；`bounded-prefill` 与 `prefill-throttle` 在 1M 配置下完成启动和混合负载测试，结果见 [基准结果](benchmarks.md)。
 - **长上下文容量**：260K 与 1,000,016 token 的单请求 prompt 均完成预填充验收；4 个和 16 个 ISL 1047000 的请求同时进入均全部成功，16 个请求超过 KV cache 最大并发 4.03 后按容量排队，没有错误或中止。
 
+## 验收 case
+
+功能验收和质量评测按职责拆成四份 catalog；配置中的 `runner` 是可直接用 `python -m` 调用的模块，`unit` case 由本地测试覆盖，`live` case 需要 pinned vLLM GPU endpoint：
+
+| 类别 | 配置 | 入口 | 内容 |
+|---|---|---|---|
+| core | [`core.json`](../config/acceptance/core.json) | `scripts.acceptance.core` | 文本、工具续轮和基础图像 |
+| visual | [`visual.json`](../config/acceptance/visual.json) | `scripts.acceptance.visual` | 图像上限、视频采样、混排和 chunk 边界 |
+| responses | [`responses.json`](../config/acceptance/responses.json) | `scripts.acceptance.responses` | Responses 基础请求、custom-tool history 和 streaming |
+| quality | [`quality.json`](../config/acceptance/quality.json) | `scripts.acceptance.quality` | PPL 和 GPQA Diamond 质量评测计划 |
+
+每个入口都支持 `--list`；视觉视频 case 还需要通过 `--video` 提供验收用视频文件。
+
 ## 精度准入
 
-每个性能候选通过 `scripts/acceptance.py` 与 `scripts/quality_gate.py` 在固定请求集（`temperature=0`、`seed=1017`）上进行对比校验：
+每个性能候选通过 `scripts.acceptance.core` 与 `scripts.acceptance.quality_gate` 在固定请求集（`temperature=0`、`seed=1017`）上进行对比校验：
 
 - 对文本、`reasoning_content`、结构化 `tool_calls`、工具续轮、图文和长上下文输出计算 SHA256 摘要。
 - 候选与基线的全部 case 均需通过且输出摘要一致，方可纳入默认推荐配置。
 - 当服务端返回 `draft_tokens` / `accepted_tokens` 计数时，`scripts/quality_metrics.py` 自动汇总投机解码接受率。
 
-对基线服务和候选服务各运行一次 `acceptance.py`，再用 `quality_gate.py` 比较两份结果。`--launch-receipt` 是 `launch.py --start` 写入 `runtime/<时间戳>/launch.json` 的启动回执，脚本据此确认被测服务就是回执里的容器：
+对基线服务和候选服务各运行一次 `scripts.acceptance.core`，再用 `scripts.acceptance.quality_gate` 比较两份结果。`--launch-receipt` 是 `launch.py --start` 写入 `runtime/<时间戳>/launch.json` 的启动回执，脚本据此确认被测服务就是回执里的容器：
 
 ```bash
-python3 -m scripts.acceptance --launch-receipt runtime/<基线时间戳>/launch.json \
+python3 -m scripts.acceptance.core --launch-receipt runtime/<基线时间戳>/launch.json \
   --output runtime/acceptance-baseline.json
-python3 -m scripts.acceptance --launch-receipt runtime/<候选时间戳>/launch.json \
+python3 -m scripts.acceptance.core --launch-receipt runtime/<候选时间戳>/launch.json \
   --output runtime/acceptance-candidate.json
-python3 -m scripts.quality_gate --reference runtime/acceptance-baseline.json \
+python3 -m scripts.acceptance.quality_gate --reference runtime/acceptance-baseline.json \
   --candidate runtime/acceptance-candidate.json --output runtime/quality-gate.json
 ```
 

@@ -15,7 +15,7 @@ from scripts.quality_metrics import (
     text_sha256,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def image(number):

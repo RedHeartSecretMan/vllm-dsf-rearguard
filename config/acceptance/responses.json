@@ -1,0 +1,14 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "runner": "scripts.acceptance.responses",
+  "description": "Responses protocol endpoint and history cases; schema and conversion contracts are also covered by CPU tests.",
+  "cases": [
+    {"id": "responses-basic", "kind": "text", "mode": "live"},
+    {"id": "responses-custom-tool-history", "kind": "custom_tool_history", "mode": "live"},
+    {"id": "responses-custom-tool-stream", "kind": "custom_tool_history", "mode": "live", "stream": true},
+    {"id": "responses-previous-response-id-tools", "kind": "previous_response_id", "mode": "live"},
+    {"id": "responses-multipart-output", "kind": "multipart_output", "mode": "unit"},
+    {"id": "responses-refusal-output", "kind": "refusal_output", "mode": "unit"},
+    {"id": "responses-image-video-input", "kind": "multimodal_input", "mode": "unit"}
+  ]
+}
