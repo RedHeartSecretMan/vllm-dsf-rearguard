@@ -29,6 +29,15 @@ KV_TRANSFER_CONNECTORS = {
 KV_TRANSFER_ROLES = {"kv_both", "kv_producer", "kv_consumer"}
 
 
+def parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
+
+
 def load_kv_transfer_config(value: str | None) -> dict | None:
     """Load and validate the small public surface of vLLM KV transfer config.
 
@@ -319,8 +328,10 @@ def parser():
     p.add_argument("--text-only", action="store_true")
     p.add_argument(
         "--chunked-mm-input",
-        action="store_true",
-        help="Allow multimodal spans to cross prefill chunks; keep off by default.",
+        type=parse_bool,
+        default=False,
+        metavar="{true,false}",
+        help="Allow multimodal spans to cross prefill chunks; default: false.",
     )
     p.add_argument(
         "--experimental",
