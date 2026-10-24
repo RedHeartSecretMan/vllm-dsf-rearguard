@@ -199,7 +199,9 @@ def needle_case(base, target):
     unit = len(
         json_request(base, "/tokenize", {"model": MODEL, "prompt": filler})["tokens"]
     )
-    count = max(1, (target - 512) // unit)
+    # target is the input length; the 512-token output allowance is separate.
+    # Reserve the fixed five facts, question and chat-template overhead here.
+    count = max(1, (target - 64) // unit)
     parts = [filler] * count
     expected = {}
     for i, fraction in enumerate((0.02, 0.25, 0.50, 0.75, 0.98)):

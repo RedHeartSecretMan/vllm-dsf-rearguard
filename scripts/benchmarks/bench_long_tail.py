@@ -237,7 +237,6 @@ def _run_tool(base: str, case: dict[str, Any], timeout: float) -> dict[str, Any]
                 timeout,
                 case["isl"],
                 case.get("input_tolerance", 0.08),
-                case.get("seed", 1017),
             )
             for _ in range(case["concurrency"])
         ]
@@ -270,10 +269,9 @@ def _run_vision(base: str, case: dict[str, Any], timeout: float) -> dict[str, An
                 timeout,
                 case["isl"],
                 case.get("input_tolerance", 0.02),
-                case.get("seed", 1017),
             )
-            for count in (case["image_counts"] * case["concurrency"])
-        ][: case["concurrency"]]
+            for count in (case["image_counts"] * case["concurrency"])[: case["concurrency"]]
+        ]
         for future in futures:
             try:
                 rows.append({"status": "PASS", **future.result()})
