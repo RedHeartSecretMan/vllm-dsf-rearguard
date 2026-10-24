@@ -50,7 +50,7 @@
 
 先执行 C256 通用预热；每个性能单元至少两轮 C2 预热，输入长度保持原形状，预热输出最多 128 token。通过实际 `engine=0/1` 的输入和生成 token 计数增长确认两个 DP 实例均工作。图文预热使用最大 4 图输入，覆盖全部图像媒体。未能证明预热完成时不能进入正式测量。
 
-每个性能单元、重复轮和请求使用独立的合法缓存盐，组间重放同一 payload。冷 KV 必须逐请求观测到 `cached_tokens=0`。视觉编码缓存与 KV 分开描述：复用已校验的媒体并预热，保留采样计数，不把冷 KV 当作冷编码器。视频历史及 Responses 协议续轮保留其正常历史/缓存行为，单独标明。
+每个性能单元、重复轮和请求使用独立的合法缓存盐，组间重放同一 payload。随机输入由 catalog seed、单元、轮次和请求序号确定；三轮各自固定，相同轮次在不同配置下内容一致。该构造与历史输入不能仅凭 seed 名义相同就直接比较。冷 KV 必须逐请求观测到 `cached_tokens=0`。视觉编码缓存与 KV 分开描述：复用已校验的媒体并预热，保留采样计数，不把冷 KV 当作冷编码器。视频历史及 Responses 协议续轮保留其正常历史/缓存行为，单独标明。
 
 原 300 秒 mixed 是闭环负载，请求数随处理速度变化。本次另用明确标记的 `fixed_arrival_schedule` 执行变体：5 批各 64 个 decode 请求，分别在 0 / 60 / 120 / 180 / 240 秒提交；15 个 prefill 请求每 20 秒提交一次。保留 C64 / C2 在途上限、原输入输出长度和 300 秒到达窗口。所有组共 335 个相同请求；记录提交等待、从计划到达到首 token/完成的延迟及排空时间。结果不与历史闭环 TPS 直接计算提升比例。
 
@@ -71,6 +71,8 @@ PPL 使用冻结的 272936 token、134 个非重叠 2048-token 窗口，`echo`�
 ## 执行与证据
 
 配置为 [`profile_matrix.json`](../config/benchmarks/profile_matrix.json)，逐组执行入口为 [`profile_matrix.py`](../scripts/benchmarks/profile_matrix.py)，服务切换入口为 [`profile_campaign.py`](../scripts/benchmarks/profile_campaign.py)。冻结数据、逐组启动回执、代码/镜像身份、原始结果、完整服务日志和采样 metrics 保存于服务器 `/tmp/dsv41-profile-20261025/`，本地归档位于 `runtime/profiling-20261025/`。
+
+最终一次性项目由 [`gpqa_bidevs.py`](../scripts/acceptance/gpqa_bidevs.py) 和 [`profile_soak.py`](../scripts/benchmarks/profile_soak.py) 执行。GPQA wrapper 检查单轮 198 题，并核对 bidevs 原生预测、评分和日志；逻辑题目数量与 HTTP 尝试/重试数量分别记录。离线汇总入口 [`profile_report.py`](../scripts/benchmarks/profile_report.py) 核对最终九组、全部适用 case、可比条件、失败处理和一次性项目；缺少任一必跑回执不能输出 `FINAL_PASS`。
 
 每组记录实际 KV 容量，输入/输出/总 token 吞吐、TTFT / TPOT / 端到端延迟及分位数、输入输出长度、成功率、缓存命中、等待队列、抢占/重计算和 OOM/服务异常。不存在的运行时指标标为未提供，不推断为零。相同 case、相同输入和测量条件才计算变化，不把不同工作负载的 TPS 平均成综合分数。
 

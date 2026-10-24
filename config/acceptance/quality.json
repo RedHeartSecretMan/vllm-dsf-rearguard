@@ -17,7 +17,7 @@
       "kind": "gpqa",
       "dataset": "GPQA Diamond",
       "questions": 198,
-      "command": "external evaluator; archive the complete 198/198 receipt"
+      "command": "scripts.acceptance.gpqa_bidevs"
     }
   ]
 }

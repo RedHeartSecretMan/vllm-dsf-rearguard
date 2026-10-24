@@ -54,6 +54,8 @@ python3 -m scripts.acceptance.responses --case all --fixtures-dir runtime/visual
 
 catalog 的统计范围是 25 个 benchmark case、27 个 acceptance case；`chunk_budget` A/B case 包含 11 个负载单元，core 的 5 个 `needle_tokens` 是按目标长度动态追加的长上下文 case。编码器基准 `scripts.benchmarks.bench_encoding` 和 `scripts.hotpaths.check` 属于 CPU / 构建支持检查，结果分别写入 `docs/evidence/encoding-benchmark.json` 和 `docs/evidence/hotpaths-cpu.json`，不代表 GPU endpoint acceptance，也不重复放入上述 catalog。
 
+完整硬件摸底由 `scripts.benchmarks.profile_plan` 展开上述 catalog，`profile_matrix` 执行逐组固定配置测试，`profile_campaign` 管理隔离服务切换。上下文、显存水位、chunk 对照、适用条件、重复次数和最终 GPQA / 压力测试的安排见 [性能摸底计划](profiling-plan.md)。
+
 ## 精度准入
 
 每个性能候选通过 `scripts.acceptance.core` 与 `scripts.acceptance.quality_gate` 在固定请求集（`temperature=0`、`seed=1017`）上进行对比校验：
