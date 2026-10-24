@@ -1791,6 +1791,9 @@ class Scheduler(SchedulerInterface):
         for i in range(lo, hi):
             mm_feature = mm_features[i]
             start_pos = mm_feature.mm_position.offset
+            if not self.is_encoder_decoder and start_pos >= encoder_window_end:
+                # A preceding video may have shortened the original window.
+                break
             num_encoder_tokens = mm_feature.mm_position.length
             num_encoder_embeds = mm_feature.mm_position.get_num_embeds()
             item_identifier = mm_feature.identifier
@@ -1828,26 +1831,28 @@ class Scheduler(SchedulerInterface):
             # image rows must fit in the current batch.
             modality = getattr(mm_feature, "modality", None)
             video_needs_atomic_fallback = modality == "video" and not video_frame_boundaries
-            current_end = num_computed_tokens + num_new_tokens + shift_computed_tokens
+            atomic_item = (
+                self.scheduler_config.disable_chunked_mm_input
+                or modality == "image"
+                or video_needs_atomic_fallback
+            )
             video_crosses_frame = False
             video_frame_end = None
-            if video_frame_boundaries and start_pos < current_end < start_pos + num_encoder_tokens:
-                relative_end = current_end - start_pos
+            if (
+                not atomic_item
+                and video_frame_boundaries
+                and start_pos < encoder_window_end < start_pos + num_encoder_tokens
+            ):
+                relative_end = encoder_window_end - start_pos
                 video_frame_end = max(
                     (boundary for boundary in video_frame_boundaries if boundary <= relative_end),
                     default=0,
                 )
                 video_crosses_frame = video_frame_end < relative_end
             if (
-                (
-                    self.scheduler_config.disable_chunked_mm_input
-                    or modality == "image"
-                    or video_needs_atomic_fallback
-                    or video_crosses_frame
-                )
+                (atomic_item or video_crosses_frame)
                 and not self.is_encoder_decoder
-                and (num_computed_tokens + num_new_tokens)
-                < (start_pos + num_encoder_tokens)
+                and encoder_window_end < (start_pos + num_encoder_tokens)
             ):
                 # Preserve the EAGLE look-ahead boundary when rolling back.
                 rollback_end = (
@@ -1858,7 +1863,13 @@ class Scheduler(SchedulerInterface):
                 num_new_tokens = max(
                     0, rollback_end - (num_computed_tokens + shift_computed_tokens)
                 )
-                break
+                encoder_window_end = (
+                    num_computed_tokens + num_new_tokens + shift_computed_tokens
+                )
+                if num_new_tokens == 0 or encoder_window_end <= start_pos:
+                    break
+                # Complete video frames remain in this chunk. They still need
+                # their encoder output (or cache reference), even after rollback.
 
             if self.is_encoder_decoder and num_computed_tokens > 0:
                 assert start_pos == 0, (

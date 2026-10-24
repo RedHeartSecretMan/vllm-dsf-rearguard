@@ -195,7 +195,7 @@
     {
       "path": "vllm/v1/core/sched/scheduler.py",
       "base_sha256": "5ef33e44cebc274bca239cc4337ad1370298fd369660b025ca98eec48c4cc015",
-      "patched_sha256": "de9d339f892ad7cf32277b772a6d2d26c1549a02ffaa4d5a06cfba291bec67f0",
+      "patched_sha256": "fbe64800efed19803283bf8cfc8c43622c6b411e31c13eb27b1aba21248163d3",
       "stage": "model_support"
     },
     {

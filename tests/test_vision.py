@@ -93,21 +93,45 @@ class AtomicImageSchedulingTests(unittest.TestCase):
         chunked=False,
         modality="image",
         frame_lengths=(10, 10),
+        can_allocate=True,
+        external_cache=False,
+        identifiers=None,
+        trace=None,
     ):
+        trace = {} if trace is None else trace
+        trace.update(cache=[], allocations=[], embed_ranges=[])
+
+        def window(features, start, end):
+            selected = [
+                i for i, feature in enumerate(features)
+                if feature.mm_position.offset < end
+                and feature.mm_position.offset + feature.mm_position.length > start
+            ]
+            return (selected[0], selected[-1] + 1) if selected else (0, 0)
+
+        def cache(request, index):
+            trace["cache"].append(index)
+            return cache_hit
+
+        def allocate(request, index, *args):
+            trace["allocations"].append(index)
+            return can_allocate
+
+        def embeds(start, end):
+            trace["embed_ranges"].append((start, end))
+            return start, end
+
         path = FILES / "vllm/v1/core/sched/scheduler.py"
         schedule = functions(
             path,
             ("_try_schedule_encoder_inputs",),
             {
-                "get_mm_features_in_window": lambda features, **kwargs: (
-                    0,
-                    len(features),
-                )
+                "get_mm_features_in_window": window
             },
         )["_try_schedule_encoder_inputs"]
         features = [
             SimpleNamespace(
-                identifier="same-image",
+                identifier=identifiers[index] if identifiers else "same-image",
                 modality=modality,
                 mm_position=SimpleNamespace(
                     offset=offset,
@@ -115,26 +139,28 @@ class AtomicImageSchedulingTests(unittest.TestCase):
                     get_num_embeds=lambda: sum(frame_lengths)
                     if modality == "video"
                     else 20,
-                    get_embeds_indices_in_range=lambda a, b: (a, b),
+                    get_embeds_indices_in_range=embeds,
                 ),
             )
-            for offset in offsets
+            for index, offset in enumerate(offsets)
         ]
         state = SimpleNamespace(
             is_encoder_decoder=False,
-            ec_connector=None,
+            ec_connector=SimpleNamespace(has_cache_item=lambda identifier: True)
+            if external_cache else None,
             scheduler_config=SimpleNamespace(
                 disable_chunked_mm_input=not chunked
             ),
             encoder_cache_manager=SimpleNamespace(
-                check_and_update_cache=lambda *a: cache_hit,
-                can_allocate=lambda *a: True,
+                check_and_update_cache=cache,
+                can_allocate=allocate,
             ),
         )
         if modality == "video":
-            features[0].data = {
-                "video_frame_span_lengths": SimpleNamespace(data=list(frame_lengths))
-            }
+            for feature in features:
+                feature.data = {
+                    "video_frame_span_lengths": SimpleNamespace(data=list(frame_lengths))
+                }
         req = SimpleNamespace(has_encoder_inputs=True, mm_features=features)
         return schedule(state, req, computed, new, 1024, shift)
 
@@ -203,6 +229,103 @@ class AtomicImageSchedulingTests(unittest.TestCase):
             )[1],
             32,
         )
+
+    def test_rolled_back_video_still_schedules_cold_encoder_input(self):
+        trace = {}
+        result = self.invoke(90, 25, cache_hit=False, chunked=True,
+                             modality="video", trace=trace)
+        self.assertEqual(result, ([0], 20, 1004, []))
+        self.assertEqual(trace["embed_ranges"], [(0, 10)])
+
+    def test_rolled_back_video_checks_local_and_external_encoder_caches(self):
+        trace = {}
+        self.assertEqual(
+            self.invoke(90, 25, chunked=True, modality="video", trace=trace),
+            ([], 20, 1024, []),
+        )
+        self.assertEqual(trace["cache"], [0])
+        self.assertEqual(
+            self.invoke(90, 25, cache_hit=False, chunked=True, modality="video",
+                        external_cache=True),
+            ([], 20, 1024, [0]),
+        )
+
+    def test_rolled_back_video_cannot_bypass_encoder_resource_limit(self):
+        self.assertEqual(
+            self.invoke(90, 25, cache_hit=False, chunked=True, modality="video",
+                        can_allocate=False),
+            ([], 10, 1024, []),
+        )
+        self.assertEqual(
+            self.invoke(105, 10, cache_hit=False, chunked=True, modality="video",
+                        can_allocate=False),
+            ([], 0, 1024, []),
+        )
+
+    def test_disabled_chunking_keeps_the_whole_video_atomic(self):
+        for end in (110, 115):
+            for cache_hit in (False, True):
+                with self.subTest(end=end, cache_hit=cache_hit):
+                    self.assertEqual(
+                        self.invoke(90, end - 90, cache_hit=cache_hit,
+                                    chunked=False, modality="video"),
+                        ([], 10, 1024, []),
+                    )
+
+    def test_frame_rollback_keeps_lookahead_and_embedding_window_consistent(self):
+        trace = {}
+        self.assertEqual(
+            self.invoke(90, 18, shift=7, cache_hit=False, chunked=True,
+                        modality="video", trace=trace),
+            ([0], 13, 1004, []),
+        )
+        self.assertEqual(trace["embed_ranges"], [(0, 10)])
+        self.assertEqual(
+            self.invoke(90, 23, shift=7, cache_hit=False, chunked=False,
+                        modality="video"),
+            ([0], 23, 1004, []),
+        )
+
+    def test_frame_rollback_with_prefix_inside_a_frame(self):
+        trace = {}
+        self.assertEqual(
+            self.invoke(105, 10, cache_hit=False, chunked=True,
+                        modality="video", trace=trace),
+            ([0], 5, 1004, []),
+        )
+        self.assertEqual(trace["embed_ranges"], [(5, 10)])
+        self.assertEqual(
+            self.invoke(105, 3, cache_hit=False, chunked=True, modality="video"),
+            ([], 0, 1024, []),
+        )
+
+    def test_multiple_videos_schedule_the_rolled_back_last_item(self):
+        trace = {}
+        self.assertEqual(
+            self.invoke(90, 65, cache_hit=False, chunked=True, modality="video",
+                        offsets=(100, 140), identifiers=("first", "second"),
+                        trace=trace),
+            ([0, 1], 60, 984, []),
+        )
+        self.assertEqual(trace["embed_ranges"], [(0, 20), (0, 10)])
+        self.assertEqual(
+            self.invoke(90, 65, cache_hit=False, chunked=True, modality="video",
+                        offsets=(100, 140)),
+            ([0], 60, 1004, []),
+        )
+
+    def test_shrunken_window_never_touches_a_later_video(self):
+        trace = {}
+        # A deliberately overlapping second feature isolates the stale hi/end
+        # boundary: once the first item rolls back to 110, offset 112 is out.
+        self.assertEqual(
+            self.invoke(90, 25, cache_hit=False, chunked=True, modality="video",
+                        offsets=(100, 112), identifiers=("first", "second"),
+                        trace=trace),
+            ([0], 20, 1004, []),
+        )
+        self.assertEqual(trace["cache"], [0])
+        self.assertEqual(trace["allocations"], [0])
 
 
 class IndexerWorkspaceTests(unittest.TestCase):
