@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import Mock
 
 
 class ResponsesCustomToolHistoryTest(unittest.TestCase):
@@ -41,6 +42,62 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         cls.build_output = staticmethod(build_response_output_items)
         cls.construct_messages = staticmethod(construct_chat_messages_with_tool_call)
         cls.construct_input = staticmethod(construct_input_messages)
+
+    def test_responses_video_extension_preserves_mixed_content_and_history(self):
+        content = [
+            {"type": "input_text", "text": "Compare the still image and video."},
+            {"type": "input_image", "image_url": "https://example.com/still.png", "detail": "auto"},
+            {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4", "video_id": "vid_clip"}, "uuid": "vid_clip"},
+            {"type": "input_text", "text": "Keep their original order."},
+        ]
+        request = self.ResponsesRequest.model_validate({
+            "model": "deepseek-flash", "input": [{"role": "user", "content": content}],
+        })
+        messages = self.construct_messages(request.input)
+        self.assertEqual(messages, [{"role": "user", "content": content}])
+        replay = self.ResponsesRequest.model_validate(request.model_dump())
+        self.assertEqual(self.construct_messages(replay.input), messages)
+        followup = self.construct_input(request_input="Continue video vid_clip.", prev_msg=messages)
+        self.assertEqual(followup[0], messages[0])
+        self.assertEqual(followup[-1], {"role": "user", "content": "Continue video vid_clip."})
+        from vllm.entrypoints.chat_utils import _parse_chat_message_content_part
+
+        media_parser = Mock()
+        _parse_chat_message_content_part(
+            messages[0]["content"][2], media_parser,
+            wrap_dicts=False, interleave_strings=True,
+        )
+        media_parser.parse_video.assert_called_once_with("https://example.com/clip.mp4", "vid_clip")
+
+    def test_responses_video_extension_rejects_malformed_inputs(self):
+        from pydantic import ValidationError
+
+        malformed = [
+            {"type": "video_url", "video_url": "https://example.com/clip.mp4"},
+            {"type": "video_url", "video_url": {}},
+            {"type": "video_url", "video_url": {"url": ""}},
+            {"type": "video_url", "video_url": {"url": 42}},
+            {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4"}, "uuid": ["wrong"]},
+            {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4", "unknown_option": True}},
+        ]
+        for part in malformed:
+            with self.subTest(part=part), self.assertRaises(ValidationError):
+                self.ResponsesRequest.model_validate({
+                    "model": "deepseek-flash", "input": [{"role": "user", "content": [part]}],
+                })
+
+    def test_responses_video_extension_does_not_relax_official_image_schema(self):
+        from pydantic import ValidationError
+
+        video = {"type": "video_url", "video_url": {"url": "https://example.com/clip.mp4"}}
+        for image in (
+            {"type": "input_image", "image_url": 123, "detail": "auto"},
+            {"type": "input_image", "image_url": "https://example.com/still.png", "detail": "invalid"},
+        ):
+            with self.subTest(image=image), self.assertRaises(ValidationError):
+                self.ResponsesRequest.model_validate({
+                    "model": "deepseek-flash", "input": [{"role": "user", "content": [image, video]}],
+                })
 
     def test_custom_tool_call_and_output_round_trip(self):
         request = self.ResponsesRequest.model_validate(

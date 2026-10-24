@@ -44,6 +44,7 @@ from openai.types.responses import (
     ResponseInProgressEvent as OpenAIResponseInProgressEvent,
 )
 from openai.types.responses.response import IncompleteDetails, ToolChoice
+from openai.types.responses.response_input_content_param import ResponseInputContentParam
 from openai.types.responses.response_reasoning_item import (
     Content as ResponseReasoningTextContent,
 )
@@ -51,6 +52,7 @@ from openai.types.responses.tool import Tool
 from openai.types.shared import Metadata, Reasoning
 from openai_harmony import Message as OpenAIHarmonyMessage
 from pydantic import (
+    ConfigDict,
     Field,
     ValidationError,
     field_serializer,
@@ -153,6 +155,42 @@ class ResponseCustomToolCallOutput(OpenAIBaseModel):
     output: str
 
 
+class ResponseVideoURL(OpenAIBaseModel):
+    """Project video reference, consumed by the existing chat media loader."""
+
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, strict=True)
+    video_id: str | None = None
+
+
+class ResponseInputVideo(OpenAIBaseModel):
+    """Typed ``video_url`` extension to Responses user input content."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["video_url"]
+    video_url: ResponseVideoURL
+    uuid: str | None = None
+    video_id: str | None = None
+
+
+class ResponseVideoInputMessage(OpenAIBaseModel):
+    """User input containing video and ordinary Responses content parts."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["message"] = "message"
+    role: Literal["user"]
+    content: list[ResponseInputContentParam | ResponseInputVideo]
+    id: str | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
+
+    @model_validator(mode="after")
+    def require_video_part(self):
+        # Ordinary Responses messages keep the SDK's original validation path.
+        if not any(isinstance(part, ResponseInputVideo) for part in self.content):
+            raise ValueError("video input message must contain a video_url part")
+        return self
+
+
 ResponseInputOutputMessage: TypeAlias = (
     list[ChatCompletionMessageParam] | list[ResponseRawMessageAndToken]
 )
@@ -161,6 +199,7 @@ ResponseInputOutputItem: TypeAlias = (
     | ResponseOutputItem
     | ResponseCustomToolCallInput
     | ResponseCustomToolCallOutput
+    | ResponseVideoInputMessage
 )
 
 

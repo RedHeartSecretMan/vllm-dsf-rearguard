@@ -39,7 +39,10 @@ from vllm.entrypoints.openai.chat_completion.protocol import (
     ChatCompletionMessageParam,
     ChatCompletionToolsParam,
 )
-from vllm.entrypoints.openai.responses.protocol import ResponseInputOutputItem
+from vllm.entrypoints.openai.responses.protocol import (
+    ResponseInputOutputItem,
+    ResponseVideoInputMessage,
+)
 from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
 from vllm.tool_parsers.utils import (
@@ -309,6 +312,12 @@ def _construct_message_from_response_item(
     Returns a new message or None. If `None`, `prev_msg` might be updated.
     If `prev_msg` is `None`, a new message is always returned.
     """
+    if isinstance(item, ResponseVideoInputMessage):
+        return {
+            "role": "user",
+            "content": item.model_dump(exclude_none=True)["content"],
+        }
+
     prev_assistant_msg = (
         prev_msg if prev_msg and prev_msg.get("role") == "assistant" else None
     )
