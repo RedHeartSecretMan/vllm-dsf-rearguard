@@ -10,7 +10,12 @@ from unittest.mock import patch
 
 import launch
 from scripts import model_check
-from scripts.bench_common import percentile, stream_metrics, verify_endpoint
+from scripts.bench_common import (
+    DEFAULT_BASE_URL,
+    percentile,
+    stream_metrics,
+    verify_endpoint,
+)
 from scripts.check_runtime import expected_sources, fingerprint, require_matching_report
 
 
@@ -161,7 +166,9 @@ class LaunchTests(unittest.TestCase):
             self.assertNotIn("--language-model-only", command)
             self.assertNotIn("--privileged", command)
             self.assertNotIn("stop", command)
-            self.assertIn("127.0.0.1:8005:8000", command)
+            self.assertIn("127.0.0.1:6789:8000", command)
+        self.assertEqual(DEFAULT_BASE_URL, "http://127.0.0.1:6789")
+        self.assertIn("127.0.0.1:8005:8000", self.plan("--port", "8005")["command"])
 
     def test_multimodal_plan_uses_deployment_limits(self):
         command = self.plan()["command"]

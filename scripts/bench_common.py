@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config/benchmarks"
 MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
 # launch.py publishes the service on this host port
-DEFAULT_BASE_URL = "http://127.0.0.1:8005"
+DEFAULT_BASE_URL = "http://127.0.0.1:6789"
 NATURE_CORPUS = (
     "A careful engineer reviews the design, measures the system, and records "
     "each result before changing the implementation. Reliable services balance "

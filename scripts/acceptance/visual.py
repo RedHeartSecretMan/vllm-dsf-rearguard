@@ -24,10 +24,9 @@ from typing import Any
 from scripts.acceptance.catalog import load, print_cases, select
 from scripts.acceptance.core import parse_object
 from scripts.acceptance.media import load_fixtures, prepare_fixtures, sha256
-from scripts.bench_common import verify_endpoint
+from scripts.bench_common import DEFAULT_BASE_URL, verify_endpoint
 
 MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
-DEFAULT_BASE_URL = "http://127.0.0.1:8005"
 
 
 def encoded_json(value: Any) -> bytes:

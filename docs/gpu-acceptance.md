@@ -40,6 +40,6 @@
 
 ## 服务与回执
 
-当前运行容器为 `dsf-main-7569412`，服务地址为 `http://127.0.0.1:8005`，使用上表的正常 32K 配置。`--responses-store` 已开启，采用单个 API 进程保存 Responses 历史，GPU 并行仍为 TP4/DP2；历史随该进程重启清空。最终健康检查和 43 个已安装适配文件的源码校验均通过。
+验收时运行容器为 `dsf-main-7569412`，服务地址为 `http://127.0.0.1:8005`，使用上表的正常 32K 配置。`--responses-store` 已开启，采用单个 API 进程保存 Responses 历史，GPU 并行仍为 TP4/DP2；历史随该进程重启清空。最终健康检查和 43 个已安装适配文件的源码校验均通过。
 
 原服务容器保留为停止状态。远端原始回执目录为 `/tmp/response-fix/gpu-acceptance-0f76da6/`；归档已取回仓库工作区的 `runtime/gpu-acceptance-0f76da6/evidence.tar.gz`，SHA256 为 `e0921f5423f7f1202c98581ba379f9db496a631610758dde95f9945f1cea09e7`。复现入口见 [验证记录](validation.md#验收-case)。

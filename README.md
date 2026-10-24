@@ -20,7 +20,7 @@ bash scripts/build.sh
 # 按下方“推荐配置”的命令生成启动计划，确认后追加 --start 启动
 ```
 
-`launch.py` 不带 `--start` 时只打印启动计划。追加 `--start` 后会检查 GPU、已构建的镜像和完整的模型校验回执，全部通过后启动容器，服务绑定 `127.0.0.1:8005`，模型名为 `deepseek-ai/DeepSeek-V4.1-Flash-1017`，接口为 OpenAI 兼容的 `/v1`。
+`launch.py` 不带 `--start` 时只打印启动计划。追加 `--start` 后会检查 GPU、已构建的镜像和完整的模型校验回执，全部通过后启动容器，服务默认绑定 `127.0.0.1:6789`，可通过 `--port` 修改端口。模型名为 `deepseek-ai/DeepSeek-V4.1-Flash-1017`，接口为 OpenAI 兼容的 `/v1`。
 
 多模态启动默认允许每个请求最多 64 张图片和 2 个视频。视频由 pinned vLLM media IO 按默认 1 FPS 和最多 32 帧计算均匀采样点，再交给 codec/backend 读取；processor 只接收这些选中帧并复用图像视觉塔。这属于服务侧扩展，不是模型官方的视频编码器。
 

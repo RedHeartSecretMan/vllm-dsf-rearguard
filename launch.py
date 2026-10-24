@@ -352,7 +352,7 @@ def parser():
     p.add_argument(
         "--eager", action="store_true", help="Correctness control without CUDA graphs"
     )
-    p.add_argument("--port", type=int, default=8005)
+    p.add_argument("--port", type=int, default=6789)
     p.add_argument("--name", default="deepseek-v41-a100")
     p.add_argument("--image", default="deepseek-v4.1-flash-a100:dev")
     p.add_argument("--receipt", type=Path, default=ROOT / "runtime/model-verified.json")
