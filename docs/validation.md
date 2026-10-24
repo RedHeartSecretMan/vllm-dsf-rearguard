@@ -2,6 +2,8 @@
 
 本文记录适配层已完成的功能、协议与精度验证，性能数据见 [基准结果](benchmarks.md)。
 
+2026-10-24 完成的视觉与 Responses 正式 GPU 验收见 [验收报告](gpu-acceptance.md)，包含运行配置、修复内容、逐项结果和回执哈希。
+
 ## 构建与来源校验
 
 | 检查项 | 入口 | 结果 |
@@ -9,7 +11,7 @@
 | 模型文件与权重校验 | `scripts/model_check.py` | 固定 ModelScope revision，83 个文件（含 48 个权重分片）大小与 SHA256 全部通过 |
 | 适配层原子安装 | `adaptation/install.py` | 43 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
 | 运行时源码复核 | `scripts/check_runtime.py` | 容器内已安装文件与源码清单指纹一致 |
-| CPU 合约与回归测试 | `unittest` | uv Python 3.10 本地运行 114 项并有 3 项环境跳过；pinned vLLM runtime 另外执行 Responses custom-tool 套件，包含视频抽样、逐帧时间映射、稳定视频身份、媒体 UUID 和部署限制契约 |
+| CPU 合约与回归测试 | `unittest` | uv Python 3.10 本地运行 157 项，8 项依赖运行时的检查跳过；固定镜像挂载实际 tokenizer 后，171 项全部通过，无跳过 |
 | CPU 热路径检查 | `scripts/hotpaths/check.py` | 34 个用例全部通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影 |
 | 固定 digest 镜像构建 | `scripts/build.sh` | 镜像构建、runtime 校验与原生 MXFP8 loader 检查通过 |
 
@@ -20,7 +22,7 @@
 - **官方编码器对齐**：官方 5 组输入夹具覆盖 40 种思考模式与 `reasoning_effort` 组合，编码输出逐字匹配。
 - **原生多模态**：单图、多图、缓存命中图片、重复图片及完整 1024-token 视觉预算边界全部通过。
 - **视频扩展**：`video_url` 由 pinned vLLM media IO 在解码前按默认 1 FPS、`num_frames=32` 选取最多 32 个均匀时间点；每个视频保留稳定的 `vid_...` 身份和全局文本 wrapper，并将同一身份写入 vLLM content-part `uuid`，再展开为按时间顺序排列的图片帧 span。启动配置限制为每请求最多 64 张图片和 2 个视频。仓库内覆盖媒体抽样、帧边界、wrapper 和 UUID 合约；GPU endpoint 回执需单独归档。多轮重放相同媒体引用及参数时身份保持稳定，但仍需要同时保留媒体输入或可用的视觉/KV cache。
-- **Responses 协议**：custom-tool history 和 streaming custom-tool events 的适配层回归已纳入测试；`scripts.acceptance.responses` 提供 pinned runtime 的 endpoint smoke 入口，实际 endpoint 回执需单独归档。
+- **Responses 协议**：7 项真实接口验收覆盖 custom-tool 历史与流式事件、工具三轮续接、multipart/refusal 历史及图像与视频输入；另验证了流式 logprobs 与存储结果一致性。`scripts.acceptance.responses` 保存完整请求、响应和 SSE 事件，结果见 [验收报告](gpu-acceptance.md)。
 - **分布式与投机解码**：`tp8 / ep8` 与 `tp4dp2 / ep8`、CUDA Graph、FP8 MLA KV cache、DSpark k5、EPLB 和 EP8 通信路径均完成目标机启动验收，并通过文本、工具和图文 smoke。
 - **实验开关**：`decode-metadata`、`ragged-reuse`、`stacked-kv` 分别完成目标机启动并通过文本和工具 smoke；`bounded-prefill` 与 `prefill-throttle` 在 1M 配置下完成启动和混合负载测试，结果见 [基准结果](benchmarks.md)。
 - **长上下文容量**：260K 与 1,000,016 token 的单请求 prompt 均完成预填充验收；4 个和 16 个 ISL 1047000 的请求同时进入均全部成功，16 个请求超过 KV cache 最大并发 4.03 后按容量排队，没有错误或中止。

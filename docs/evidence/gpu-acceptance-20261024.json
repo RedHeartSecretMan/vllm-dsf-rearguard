@@ -1,0 +1,393 @@
+{
+  "status": "PASS",
+  "recorded_at": "2026-10-24T15:23:07.237675+00:00",
+  "host_alias": "nvidia_112.9.48",
+  "hardware": "8 x NVIDIA A100-SXM4-80GB",
+  "profiles": {
+    "normal_32768": {
+      "revision": "756941245a1af24576d3f97cc74e295064128e74",
+      "image_id": "sha256:235c0fa37f92eb29a7ec0a959e82da9e3c5cf559dec54099939a4971db9a1653",
+      "container_id": "66d4bb831e4604142693ac0128c486e159ff6f36c1e90dc17f51d015d9504cc5",
+      "container": "dsf-main-7569412",
+      "context": 1048576,
+      "parallel": {
+        "tp": 4,
+        "dp": 2,
+        "ep": 8,
+        "max_global_seqs": 256
+      },
+      "dspark": 5,
+      "chunk": 32768,
+      "disable_chunked_mm_input": true,
+      "responses_store": true,
+      "source_manifest_sha256": "98d985dde17f699d411ae376ac55481c4660140c5074360a15308c68535fa006"
+    },
+    "chunked_1024": {
+      "revision": "4409813d9cfe9acbd8e6885eb7c563eb7902bfe2",
+      "image_id": "sha256:b9469f6bbbf4a25468d664f701adfb688bbaaff4befc78f29e5bdf545415ccb6",
+      "container_id": "75acf52734c3b2fa7b37544fecdd77b1bd0c34af7b41b4c31c2d4fff64239702",
+      "container": "dsf-acceptance-4409813-chunked",
+      "context": 1048576,
+      "parallel": {
+        "tp": 4,
+        "dp": 2,
+        "ep": 8,
+        "max_global_seqs": 256
+      },
+      "dspark": 5,
+      "chunk": 1024,
+      "disable_chunked_mm_input": false,
+      "responses_store": true,
+      "source_manifest_sha256": "a6713366cd652cd0f29f535f7bb7c87dd54182e1e92af00d6eab06c81f56bd9c"
+    }
+  },
+  "visual_runtime_sources_identical_across_profiles": {
+    "vllm/models/deepseek_v4_1/common/mm_preprocess.py": "690963132a9968acabddd08fc6f6ab5790ce7f77a9d3c43b9ed05bf3c05c3281",
+    "vllm/models/deepseek_v4_1/nvidia/vl_model.py": "89de96bb691499369a7c03b4c99842385e22f5da8a5ef8e0fdeaffeb06f63b76",
+    "vllm/tokenizers/video_prompt.py": "b502222bd36eee35e88db030f340c4f016eeb1c3bcee47c8d067f67aedf8a434",
+    "vllm/renderers/deepseek_v4.py": "d9ed08a61c94af3926b0fde7d13e17a9de9821b7129d1831a2a334cd92b5c3a4",
+    "vllm/v1/core/sched/scheduler.py": "fbe64800efed19803283bf8cfc8c43622c6b411e31c13eb27b1aba21248163d3"
+  },
+  "visual": [
+    {
+      "case": "visual-image-single",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-image-multiple",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-image-limit-64",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-video-short",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-video-long",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-video-two-items",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-image-video-image-order",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-video-chunked-disabled",
+      "status": "PASS",
+      "profile": "normal_32768"
+    },
+    {
+      "case": "visual-video-chunked-frame-boundary",
+      "status": "PASS",
+      "profile": "chunked_1024"
+    },
+    {
+      "case": "visual-video-history-uuid",
+      "status": "PASS",
+      "profile": "normal_32768"
+    }
+  ],
+  "responses": [
+    {
+      "case": "responses-basic",
+      "status": "PASS",
+      "http_requests": 1
+    },
+    {
+      "case": "responses-custom-tool-history",
+      "status": "PASS",
+      "http_requests": 1
+    },
+    {
+      "case": "responses-custom-tool-stream",
+      "status": "PASS",
+      "http_requests": 1
+    },
+    {
+      "case": "responses-previous-response-id-tools",
+      "status": "PASS",
+      "http_requests": 6
+    },
+    {
+      "case": "responses-multipart-output",
+      "status": "PASS",
+      "http_requests": 1
+    },
+    {
+      "case": "responses-refusal-output",
+      "status": "PASS",
+      "http_requests": 1
+    },
+    {
+      "case": "responses-image-video-input",
+      "status": "PASS",
+      "http_requests": 1
+    }
+  ],
+  "core": [
+    {
+      "case": "arithmetic-thinking-False",
+      "status": "PASS"
+    },
+    {
+      "case": "arithmetic-thinking-True",
+      "status": "PASS"
+    },
+    {
+      "case": "tool-call",
+      "status": "PASS"
+    },
+    {
+      "case": "tool-continuation-reversed",
+      "status": "PASS"
+    },
+    {
+      "case": "vision-1-images",
+      "status": "PASS"
+    },
+    {
+      "case": "vision-2-images",
+      "status": "PASS"
+    },
+    {
+      "case": "vision-4-images",
+      "status": "PASS"
+    },
+    {
+      "case": "vision-reversed-tool-id",
+      "status": "PASS"
+    }
+  ],
+  "extra": [
+    {
+      "case": "long-video-time-grounding",
+      "status": "PASS"
+    },
+    {
+      "case": "image-limit-rejection",
+      "status": "PASS"
+    },
+    {
+      "case": "video-limit-rejection",
+      "status": "PASS"
+    },
+    {
+      "case": "concurrent-visual-image-multiple",
+      "status": "PASS"
+    },
+    {
+      "case": "concurrent-visual-video-short",
+      "status": "PASS"
+    },
+    {
+      "case": "concurrent-visual-video-two-items",
+      "status": "PASS"
+    },
+    {
+      "case": "concurrent-visual-image-video-image-order",
+      "status": "PASS"
+    },
+    {
+      "case": "streamed-logprobs-and-stored-output",
+      "status": "PASS",
+      "logprob_count": 5
+    }
+  ],
+  "runtime_tests": {
+    "count": 171,
+    "skipped": 0,
+    "status": "PASS"
+  },
+  "processor_scheduler_checks": {
+    "count": 107,
+    "status": "PASS",
+    "kind": "installed runtime structure assertions; constructed scheduler requests, not service traces"
+  },
+  "video_sampling": {
+    "frame_count": 32,
+    "frame_indices": [
+      0,
+      30,
+      61,
+      92,
+      123,
+      154,
+      185,
+      216,
+      247,
+      278,
+      309,
+      340,
+      371,
+      402,
+      433,
+      464,
+      494,
+      525,
+      556,
+      587,
+      618,
+      649,
+      680,
+      711,
+      742,
+      773,
+      804,
+      835,
+      866,
+      897,
+      928,
+      959
+    ],
+    "source_fps": 10.0,
+    "duration": 96.0,
+    "sampled_seconds": [
+      0.0,
+      3.0,
+      6.1,
+      9.2,
+      12.3,
+      15.4,
+      18.5,
+      21.6,
+      24.7,
+      27.8,
+      30.9,
+      34.0,
+      37.1,
+      40.2,
+      43.3,
+      46.4,
+      49.4,
+      52.5,
+      55.6,
+      58.7,
+      61.8,
+      64.9,
+      68.0,
+      71.1,
+      74.2,
+      77.3,
+      80.4,
+      83.5,
+      86.6,
+      89.7,
+      92.8,
+      95.9
+    ],
+    "shape": [
+      32,
+      384,
+      384,
+      3
+    ]
+  },
+  "chunk_evidence": {
+    "max_num_batched_tokens": 1024,
+    "prompt_tokens": 6329,
+    "cached_tokens": 0
+  },
+  "cross_profile_comparison": {
+    "request_sha256": "91fadceb15214b2e4ac2ef5216e0e42b61479984676f7f1c5c87fd93223680ca",
+    "parsed": {
+      "numbers": [
+        1,
+        2,
+        3
+      ],
+      "colors": [
+        "red",
+        "green",
+        "blue"
+      ]
+    },
+    "status": "PASS"
+  },
+  "temporal_grounding": {
+    "frame_index": 24,
+    "sample_time_seconds": 71.1,
+    "number": 3,
+    "color": "blue"
+  },
+  "artifact_directory": "/tmp/response-fix/gpu-acceptance-0f76da6",
+  "artifacts": {
+    "complete-launch.json": {
+      "sha256": "c28a6e849127579935da9176d67194a0716d85b122bb0c4c94aa32d51092e903",
+      "bytes": 5058
+    },
+    "chunked-launch.json": {
+      "sha256": "3e2212842bcb52e1ecd35e1cdca654863bb8429793da917578c1177838835701",
+      "bytes": 5089
+    },
+    "visual-complete/summary.json": {
+      "sha256": "ae478cf90867d58440b7778a57239f0eb3aed6a31f17f07dd3c422e709508e7d",
+      "bytes": 40298
+    },
+    "visual-chunked/summary.json": {
+      "sha256": "d9ff8fb59e1ef24405e1a257672dfaf382acea06dbb75999e9ef503e7eb8173b",
+      "bytes": 40584
+    },
+    "responses-complete.json": {
+      "sha256": "d0cdc1129dfe0813075283f5096ddcd71061246d6699ccf62110b45145ac6911",
+      "bytes": 82871
+    },
+    "core-complete.json": {
+      "sha256": "11fa9e15733a6ade6a6fd8d2f6b901bf63e3d2999a86cae11475acf0656e9248",
+      "bytes": 21149
+    },
+    "extra-complete.json": {
+      "sha256": "f5aecc4ad451517e91fe3d844aaee0f63b177e59b970241f5605af64e96e7c45",
+      "bytes": 372612
+    },
+    "logprobs-complete.json": {
+      "sha256": "f9327bc05723cdf0fb6eaabe484fcac0da369e1a1703986ba25887898b04af1a",
+      "bytes": 48473
+    },
+    "complete-runtime-tests.log": {
+      "sha256": "7aa3a6bff5879b079c669e437f1f4fb3a97b596fc71c3a5d1d235ee7b3d4988c",
+      "bytes": 27141
+    },
+    "mm-release.json": {
+      "sha256": "2a11b41ae77652e48f5a355e44a0a5842d7ef6aaabc884b3f3b193cc32a8c425",
+      "bytes": 32819
+    },
+    "mm-original-same-fixture.json": {
+      "sha256": "ba4fe1169b9a8bb52908379ed69f38b307a59ae1f150395fb10ccfe2bdab2b3c",
+      "bytes": 35826
+    },
+    "vision-cache-original.log": {
+      "sha256": "19b2c8b1ce62b2151c3dbeaecfc42c49f79cde282da961256626f7479be946a3",
+      "bytes": 10997
+    },
+    "vision-cache-fixed.log": {
+      "sha256": "a087f4ed41fa8b8c8ba5c6bbed3662fbd25a98f9f73ee5f82b00651cbd74c0b9",
+      "bytes": 1811
+    },
+    "build-complete.log": {
+      "sha256": "0a03edc6fc0ebe9c5ca8c19465f4e387b63672aa41ac03aaa4638f996b428b59",
+      "bytes": 39668
+    },
+    "complete-service.log": {
+      "sha256": "377a1256a8101e1d0e147f0901a0e041ef66a26bde5ba21c7119e76840c43196",
+      "bytes": 336262
+    }
+  },
+  "archive": {
+    "repository_workspace_path": "runtime/gpu-acceptance-0f76da6/evidence.tar.gz",
+    "remote_path": "/tmp/response-fix/gpu-acceptance-0f76da6-evidence.tar.gz",
+    "sha256": "e0921f5423f7f1202c98581ba379f9db496a631610758dde95f9945f1cea09e7"
+  }
+}
