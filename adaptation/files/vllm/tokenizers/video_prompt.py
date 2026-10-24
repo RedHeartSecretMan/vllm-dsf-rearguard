@@ -24,6 +24,11 @@ VIDEO_PART_TYPES = ("video_url", "input_video", "video")
 _SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
 
 
+def video_frame_marker(video_index: int) -> str:
+    """Return the ordinary-text marker used to bind one video occurrence."""
+    return f"Video frame sequence {video_index + 1}."
+
+
 def _explicit_video_id(block: Mapping[str, Any]) -> str | None:
     """Return a caller-provided stable id when one is present."""
     candidates: list[Any] = [
@@ -91,7 +96,7 @@ def stable_video_id(block: Mapping[str, Any]) -> str:
     return f"vid_{digest}"
 
 
-def render_video_prompt(block: Mapping[str, Any]) -> str:
+def render_video_prompt(block: Mapping[str, Any], video_index: int = 0) -> str:
     """Render one video wrapper while preserving exactly one media placeholder."""
     video_id = stable_video_id(block)
     timestamps = block.get("video_prompt_timestamps")
@@ -111,6 +116,7 @@ def render_video_prompt(block: Mapping[str, Any]) -> str:
         f"Video ID: {video_id}.\n"
         f"{frame_context}\n"
         "Treat them as one video sequence.\n\n"
+        f"{video_frame_marker(video_index)}\n"
         f"{IMAGE_PLACEHOLDER}\n\n"
         f"End of video {video_id}."
     )
@@ -197,4 +203,4 @@ def attach_video_prompt_timestamps(
 
 def render_dummy_video_prompt(index: int) -> str:
     """Render a deterministic profiling wrapper for one dummy video."""
-    return render_video_prompt({"video_id": f"vid_{index:016x}"})
+    return render_video_prompt({"video_id": f"vid_{index:016x}"}, index)

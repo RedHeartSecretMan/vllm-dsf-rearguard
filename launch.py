@@ -304,7 +304,9 @@ def parser():
     p.add_argument(
         "--max-seqs", type=int, default=256, help="Global budget across both DP ranks"
     )
-    p.add_argument("--chunk", type=int, default=16384)
+    # A 32-frame video can occupy 32 * 1024 visual tokens. Keep the default
+    # batch budget large enough when chunked multimodal input is disabled.
+    p.add_argument("--chunk", type=int, default=32768)
     p.add_argument(
         "--logits-row-chunk",
         type=int,

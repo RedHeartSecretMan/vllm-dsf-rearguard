@@ -99,7 +99,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
-      "patched_sha256": "d89ff16aa75cedc7b0c495856126971cbceac48e3bbc844409fc26c1c0fdb33c",
+      "patched_sha256": "e1f767b57f87a94e8ec898f481ddc92b39fc690e6ff42d92cceef1e5e9a8da2d",
       "stage": "model_support"
     },
     {
@@ -147,13 +147,13 @@
     {
       "path": "vllm/tokenizers/video_prompt.py",
       "base_sha256": null,
-      "patched_sha256": "c6b2278aa916f347e8c37a16b3aaaf3342cb168df6efd548b39f50ca9cba651c",
+      "patched_sha256": "b502222bd36eee35e88db030f340c4f016eeb1c3bcee47c8d067f67aedf8a434",
       "stage": "model_support"
     },
     {
       "path": "vllm/tokenizers/deepseek_v41.py",
       "base_sha256": "d6e9cbce7c5f127819452fa5d03dd4f22ad9f136dd202a54b5b31fe42402cae2",
-      "patched_sha256": "5f87bc88b0aa24e25d773ed341f296d4173993b977778ed94db98c3577144a34",
+      "patched_sha256": "3fae44952fb87a9ee26b3fa6096c1d74ecb44b62242ee5b78e7d15bc3b3b6697",
       "stage": "model_support"
     },
     {
@@ -237,7 +237,7 @@
     {
       "path": "vllm/entrypoints/openai/responses/utils.py",
       "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
-      "patched_sha256": "b4f61521165c63c2c8ff6d8417fc56b2e14fde5dc32a9e2e2d8b0caf9b2855e9",
+      "patched_sha256": "971068d29366e30e2f510668b938b0c5af40bff6ddf519d62ff52c0ce4bd9832",
       "stage": "base_integration"
     },
     {

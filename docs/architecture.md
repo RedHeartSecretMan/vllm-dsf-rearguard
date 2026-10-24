@@ -21,7 +21,7 @@
 - 跨 user/system/assistant 边界清空旧工具排序键，防止无关轮次的图片或工具结果继承旧顺序。
 - 移除非官方图像对齐 token，恢复完整 1024-token 图像预算。
 - 视频占位符保留一个稳定的 `vid_<hash>` 身份和全局文本 wrapper；processor 再将其展开为按时间顺序排列的图片帧 span。每帧继续使用图片局部 span，scheduler 只在完整帧之间允许 chunk。
-- 视频采样在 pinned vLLM media IO 解码前完成：按请求的 `1 FPS` 和 `num_frames=32` 计算目标帧索引，长视频在全视频范围内均匀选择最多 32 个时间点；模型 processor 的 32 帧上限只作为兜底。
+- 视频采样在 pinned vLLM media IO 中完成：按请求的 `1 FPS` 和 `num_frames=32` 计算目标帧索引，长视频在全视频范围内均匀选择最多 32 个时间点；processor 拒绝超过 32 帧的 media backend 输出。帧索引限制了送入 processor 的帧数，具体 codec 是否仍需顺序扫描由 backend 决定。
 - renderer 将 media IO 返回的实际采样时间按帧序号写入视频 wrapper；时间清单与后续连续图片 span 一一对应，chunk 只切视觉帧边界，不改变映射顺序。
 - 多轮请求重放相同媒体时 wrapper 身份保持稳定，并写入 vLLM 视频 content-part 的 `uuid` 以复用多模态 encoder/prefix cache；缺少原始媒体或服务端视觉/KV 缓存时，单独发送身份文本仍不能恢复视频。
 - 对缓存命中、重复图片、精确图片起点、prefix-cache 尾部和极端长宽比增加调度与几何保护。

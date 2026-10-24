@@ -22,7 +22,7 @@ bash scripts/build.sh
 
 `launch.py` 不带 `--start` 时只打印启动计划。追加 `--start` 后会检查 GPU、已构建的镜像和完整的模型校验回执，全部通过后启动容器，服务绑定 `127.0.0.1:8005`，模型名为 `deepseek-ai/DeepSeek-V4.1-Flash-1017`，接口为 OpenAI 兼容的 `/v1`。
 
-多模态启动默认允许每个请求最多 64 张图片和 2 个视频。视频由 pinned vLLM media IO 按默认 1 FPS 和最多 32 帧，在解码前直接选取均匀的时间点；再复用图像视觉塔。这属于服务侧扩展，不是模型官方的视频编码器。
+多模态启动默认允许每个请求最多 64 张图片和 2 个视频。视频由 pinned vLLM media IO 按默认 1 FPS 和最多 32 帧计算均匀采样点，再交给 codec/backend 读取；processor 只接收这些选中帧并复用图像视觉塔。这属于服务侧扩展，不是模型官方的视频编码器。
 
 每个视频会生成稳定的 `vid_...` 身份，并在普通文本 wrapper 中记录 media IO 返回的逐帧采样时间和一个视频占位符；占位符随后展开为同顺序的图片帧 span。多轮历史重放相同媒体引用及参数时会得到相同身份，单独发送身份文本不会恢复缺失的媒体内容。
 
@@ -31,19 +31,19 @@ chunked 实验中，图片 span 仍由项目 scheduler 强制保持原子；只�
 
 ## 推荐配置
 
-两套配置都使用 `tp4dp2 / ep8`、DSpark k5、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=16384`，不同点是上下文上限：262K 适合高并发，1M 适合容量型请求和长文任务。
+两套视觉配置都使用 `tp4dp2 / ep8`、DSpark k5、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256` 和 `max-num-batched-tokens=32768`，以容纳 32 帧视频的最大视觉 item；不同点是上下文上限：262K 适合高并发，1M 适合容量型请求和长文任务。16K 仍可用于显式 chunked 或 text-only 实验。
 
 262K 配置：
 
 ```bash
-python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 16384 \
+python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 32768 \
   --context 262144 --experimental stacked-kv
 ```
 
 1M 配置：
 
 ```bash
-python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 16384 \
+python3 launch.py "$MODEL" --parallel tp4dp2 --dspark 5 --max-seqs 256 --chunk 32768 \
   --context 1048576 --experimental stacked-kv --experimental bounded-prefill
 ```
 

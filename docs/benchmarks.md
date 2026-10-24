@@ -11,7 +11,7 @@
 
 ## 基础配置
 
-`tp4dp2 / ep8`、DSpark k5、stacked-kv、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256`、`max-num-batched-tokens=16384`、`gpu-memory-utilization=0.90`。在此基础上按上下文上限分为两套配置：
+历史文本/图文 benchmark 记录使用 `tp4dp2 / ep8`、DSpark k5、stacked-kv、CUDA Graph、OMP 8、EPLB、SM80 custom AG/RS、全局 `max-seqs=256`、`max-num-batched-tokens=16384`、`gpu-memory-utilization=0.90`。视觉推荐配置使用 32768 以容纳 32 帧视频；在此基础上按上下文上限分为两套配置：
 
 | 配置 | 上下文上限 | 启动参数 | 适用场景 |
 |---|---:|---|---|

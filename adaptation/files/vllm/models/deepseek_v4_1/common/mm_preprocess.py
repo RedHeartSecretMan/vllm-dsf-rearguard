@@ -44,6 +44,7 @@ from vllm.multimodal.processing import (
 from vllm.tokenizers.video_prompt import (
     IMAGE_PLACEHOLDER,
     render_dummy_video_prompt,
+    video_frame_marker,
 )
 from vllm.transformers_utils.configs.deepseek_v41 import DeepseekV41Config
 
@@ -578,6 +579,17 @@ class DeepseekV4VLMultiModalProcessor(
                 [image_token_id] * types.numel(), image_token_id
             )
 
+        def get_video_target(item_idx: int) -> list[int]:
+            # The marker is an occurrence-specific matching anchor. It is
+            # consumed by the replacement, while the timestamp table remains
+            # in the prompt; keeping it out of the replacement avoids adding
+            # ordinary text tokens to the visual span length.
+            tokenizer = self.info.get_tokenizer()
+            marker = tokenizer.encode(
+                video_frame_marker(item_idx) + "\n", add_special_tokens=False
+            )
+            return marker + [image_token_id]
+
         return [
             PromptReplacement(
                 modality="image",
@@ -586,7 +598,7 @@ class DeepseekV4VLMultiModalProcessor(
             ),
             PromptReplacement(
                 modality="video",
-                target=[image_token_id],
+                target=get_video_target,
                 replacement=get_video_replacement,
             ),
         ]

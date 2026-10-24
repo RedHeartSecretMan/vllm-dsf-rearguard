@@ -211,6 +211,16 @@ class OfficialParityTests(unittest.TestCase):
         ids = video_ids(content)
         self.assertEqual(len(set(ids)), 2)
         self.assertEqual(content.count(encoder.IMAGE_PLACEHOLDER), 2)
+        self.assertIn("Video frame sequence 1.", content)
+        self.assertIn("Video frame sequence 2.", content)
+        self.assertIn(
+            "Video frame sequence 1.\n" + encoder.IMAGE_PLACEHOLDER,
+            content,
+        )
+        self.assertIn(
+            "Video frame sequence 2.\n" + encoder.IMAGE_PLACEHOLDER,
+            content,
+        )
         unique_ids = list(dict.fromkeys(ids))
         self.assertLess(content.index(unique_ids[0]), content.index(unique_ids[1]))
         for video_id in unique_ids:
@@ -353,7 +363,7 @@ class OfficialParityTests(unittest.TestCase):
             hashlib.sha256(
                 (ADAPTATION / "files/vllm/tokenizers/deepseek_v41.py").read_bytes()
             ).hexdigest(),
-            "5f87bc88b0aa24e25d773ed341f296d4173993b977778ed94db98c3577144a34",
+            "3fae44952fb87a9ee26b3fa6096c1d74ecb44b62242ee5b78e7d15bc3b3b6697",
         )
 
     def test_text_and_tool_histories_match_reference(self):

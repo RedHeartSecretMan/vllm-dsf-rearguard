@@ -23,6 +23,7 @@ def _normalize_messages(
     # deepcopy already returns independent message dictionaries; a second
     # per-message dict() copy only adds allocation and traversal overhead.
     result = copy.deepcopy(messages)
+    video_index = 0
     for message in result:
         role = message.get("role")
         if role == "developer":
@@ -54,7 +55,8 @@ def _normalize_messages(
                     # Keep one application-level placeholder. The processor
                     # expands it to ordered frame spans; the ordinary-text
                     # wrapper gives every replayed video a stable identity.
-                    parts.append(render_video_prompt(block))
+                    parts.append(render_video_prompt(block, video_index))
+                    video_index += 1
                 else:
                     raise ValueError(
                         "DeepSeek V4.1 supports text, image, and video content; "

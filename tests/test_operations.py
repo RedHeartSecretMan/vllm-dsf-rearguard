@@ -170,6 +170,9 @@ class LaunchTests(unittest.TestCase):
         media = json.loads(command[command.index("--media-io-kwargs") + 1])
         self.assertEqual(media, {"video": {"num_frames": 32, "fps": 1}})
         self.assertIn("--disable-chunked-mm-input", command)
+        self.assertEqual(
+            command[command.index("--max-num-batched-tokens") + 1], "32768"
+        )
 
         chunked = self.plan("--no-disable-chunked-mm-input", "--chunk", "16384")["command"]
         self.assertNotIn("--disable-chunked-mm-input", chunked)

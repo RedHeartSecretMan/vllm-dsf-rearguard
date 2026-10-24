@@ -26,6 +26,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         from vllm.entrypoints.openai.responses.utils import (
             build_response_output_items,
             construct_chat_messages_with_tool_call,
+            construct_input_messages,
         )
 
         cls.ResponsesRequest = ResponsesRequest
@@ -39,6 +40,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         cls.CustomTool = CustomTool
         cls.build_output = staticmethod(build_response_output_items)
         cls.construct_messages = staticmethod(construct_chat_messages_with_tool_call)
+        cls.construct_input = staticmethod(construct_input_messages)
 
     def test_custom_tool_call_and_output_round_trip(self):
         request = self.ResponsesRequest.model_validate(
@@ -108,6 +110,38 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
 
         self.assertEqual(messages[0]["tool_calls"][0]["id"], "call_1")
         self.assertEqual(messages[1]["content"], "applied")
+
+    def test_previous_response_output_replays_tool_calls_and_outputs(self):
+        request = self.ResponsesRequest.model_validate(
+            {
+                "model": "deepseek-flash",
+                "input": [
+                    {
+                        "type": "custom_tool_call",
+                        "call_id": "call_history",
+                        "name": "apply_patch",
+                        "input": "*** Begin Patch\n*** End Patch",
+                    },
+                    {
+                        "type": "custom_tool_call_output",
+                        "call_id": "call_history",
+                        "output": "applied",
+                    },
+                ],
+            }
+        )
+
+        messages = self.construct_input(
+            request_input="Continue.",
+            prev_response_output=request.input,
+        )
+
+        self.assertEqual(messages[0]["role"], "assistant")
+        self.assertEqual(messages[0]["tool_calls"][0]["id"], "call_history")
+        self.assertEqual(messages[1]["role"], "tool")
+        self.assertEqual(messages[1]["tool_call_id"], "call_history")
+        self.assertEqual(messages[1]["content"], "applied")
+        self.assertEqual(messages[2], {"role": "user", "content": "Continue."})
 
     def test_custom_tool_output_keeps_freeform_input(self):
         output = self.build_output(

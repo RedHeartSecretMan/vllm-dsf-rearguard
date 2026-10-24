@@ -2,11 +2,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import json
-
-import partial_json_parser
 from collections.abc import Iterable
 from typing import Any
 
+import partial_json_parser
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionMessageToolCallParam,
@@ -33,7 +32,6 @@ from openai.types.responses.response_reasoning_item import (
 )
 from openai.types.responses.tool import Tool
 from partial_json_parser.core.options import Allow
-
 from vllm import envs
 from vllm.entrypoints.chat_utils import make_tool_call_id
 from vllm.entrypoints.generate.base.protocol import FunctionCall, FunctionDefinition
@@ -262,17 +260,18 @@ def construct_input_messages(
         # The current request's instructions (if any) were already added above.
         messages.extend(m for m in prev_msg if m.get("role") != "system")
     if prev_response_output is not None:
-        # Add the previous output.
-        for output_item in prev_response_output:
-            # NOTE: We skip the reasoning output.
-            if isinstance(output_item, ResponseOutputMessage):
-                for content in output_item.content:
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": content.text,
-                        }
-                    )
+        # Replay previous non-reasoning output items, including function calls,
+        # custom-tool calls and their outputs. Dropping tool items here makes
+        # previous_response_id lose the agent's conversation state.
+        messages.extend(
+            construct_chat_messages_with_tool_call(
+                [
+                    item
+                    for item in prev_response_output
+                    if not isinstance(item, ResponseReasoningItem)
+                ]
+            )
+        )
 
     # Append the new input.
     # Responses API supports simple text inputs without chat format.
@@ -394,7 +393,18 @@ def _construct_message_from_response_item(
             "reasoning": reasoning,
         }
     elif isinstance(item, ResponseOutputMessage):
-        output_text = item.content[0].text
+        output_parts = []
+        for content in item.content:
+            text = getattr(content, "text", None)
+            if text:
+                output_parts.append(text)
+                continue
+            refusal = getattr(content, "refusal", None)
+            if refusal:
+                output_parts.append(refusal)
+        output_text = "\n".join(output_parts)
+        if not output_text and prev_assistant_msg:
+            return None
         if prev_assistant_msg:
             previous_content = prev_assistant_msg.get("content")
             if previous_content is None:
