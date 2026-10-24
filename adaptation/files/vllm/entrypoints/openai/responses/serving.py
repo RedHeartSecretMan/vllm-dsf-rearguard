@@ -799,6 +799,8 @@ class OpenAIServingResponses(GenerateBaseServing):
 
             # A completed stream already owns its item and tool-call IDs.
             # Reuse those items for the terminal event and stored history.
+            if streamed_output is not None:
+                self._log_response_output(request, final_output)
             output = streamed_output if streamed_output is not None else (
                 self._make_response_output_items(
                     request,
@@ -971,14 +973,11 @@ class OpenAIServingResponses(GenerateBaseServing):
             for lg in lgs
         ]
 
-    def _make_response_output_items(
+    def _log_response_output(
         self,
         request: ResponsesRequest,
         final_output: CompletionOutput,
-        tokenizer: TokenizerLike,
-        parser: Parser | None = None,
-    ) -> list[ResponseOutputItem]:
-        # Log complete response if output logging is enabled
+    ) -> None:
         if self.enable_log_outputs and self.request_logger:
             self.request_logger.log_outputs(
                 request_id=request.request_id,
@@ -988,6 +987,15 @@ class OpenAIServingResponses(GenerateBaseServing):
                 is_streaming=False,
                 delta=False,
             )
+
+    def _make_response_output_items(
+        self,
+        request: ResponsesRequest,
+        final_output: CompletionOutput,
+        tokenizer: TokenizerLike,
+        parser: Parser | None = None,
+    ) -> list[ResponseOutputItem]:
+        self._log_response_output(request, final_output)
 
         # Compute logprobs if requested
         logprobs = None

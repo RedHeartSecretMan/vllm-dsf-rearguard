@@ -572,7 +572,7 @@ class DelegatingParser(Parser):
             or request.tool_choice == "required"
             or isinstance(
                 request.tool_choice,
-                (ChatCompletionNamedToolChoiceParam, ToolChoiceFunction),
+                (ChatCompletionNamedToolChoiceParam, ToolChoiceFunction, ToolChoiceCustom),
             )
         )
         if not need_tool_calling:

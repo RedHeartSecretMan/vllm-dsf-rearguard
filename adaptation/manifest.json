@@ -123,7 +123,7 @@
     {
       "path": "vllm/parser/deepseek_v4.py",
       "base_sha256": "8de2aad7b4236ab7a23cfcee66f2fc76022a8c4485fdf2e7ad4046b5e7dd2427",
-      "patched_sha256": "2165527beadb504dfe45384aa0f9aae790dcc73070c525322043173c8672e1a5",
+      "patched_sha256": "bbd1b55bdf8a5b76be784450861f5a082b02f234570479b963d1364c41e0b1de",
       "stage": "base_integration"
     },
     {
@@ -249,7 +249,7 @@
     {
       "path": "vllm/entrypoints/openai/responses/serving.py",
       "base_sha256": "dc720ca7038f73581f5576b0c5c56e086167fea3323f29f2d76bbacdb5b5b6db",
-      "patched_sha256": "9759c61b0c9a4831d9ac49436fb5473006fc1b86e56828398efd3fb272f6df3b",
+      "patched_sha256": "ab8ea11735dea6c612896fe08ca011947413b906bde6be138566ba7c80a8be0c",
       "stage": "base_integration"
     },
     {
@@ -267,13 +267,13 @@
     {
       "path": "vllm/parser/abstract_parser.py",
       "base_sha256": "368997944992edcd312acc6cb08de6877c87ed7160c8b4ca5897d7ae2bdc39d7",
-      "patched_sha256": "289281befd05bf2e90029b1ab9857d9480f8968384667aaa779f52c2fee2890b",
+      "patched_sha256": "8606cb1c38e4266c37260e014ca55d6f2bbc99e9b40459913d0c23abbfe48b13",
       "stage": "base_integration"
     },
     {
       "path": "vllm/entrypoints/openai/responses/streaming_events.py",
       "base_sha256": "f2681d82bdb1d041b3d78535db90b556d29c6474f790b783079c7ea156319017",
-      "patched_sha256": "9a213dcd45f4296e98326397d5613a18bc1fa434fc59dd797b8cf61f4035cf99",
+      "patched_sha256": "d36dd7e8a2789c7db913c46031055e53cba845c24d3a70e6c9a547163c88e98e",
       "stage": "base_integration"
     }
   ],

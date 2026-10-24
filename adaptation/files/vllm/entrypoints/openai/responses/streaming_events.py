@@ -824,6 +824,7 @@ class SimpleStreamingState:
     current_item_id: str = ""
     content_index: int = 0
     accumulated_text: str = ""
+    content_logprobs: list[response_text_delta_event.Logprob] = field(default_factory=list)
     tool_call_id: str = ""
     tool_call_name: str = ""
     tool_call_namespace: str | None = None
@@ -841,6 +842,7 @@ def emit_simple_content_open(
     state.current_item_id = random_uuid()
     state.content_index = 0
     state.accumulated_text = ""
+    state.content_logprobs = []
     return [
         ResponseOutputItemAddedEvent(
             type="response.output_item.added",
@@ -876,6 +878,8 @@ def emit_simple_content_delta(
     logprobs: list[response_text_delta_event.Logprob] | None = None,
 ) -> list[StreamingResponsesResponse]:
     state.accumulated_text += delta
+    if logprobs:
+        state.content_logprobs.extend(logprobs)
     return [
         ResponseTextDeltaEvent(
             type="response.output_text.delta",
@@ -892,10 +896,14 @@ def emit_simple_content_delta(
 def emit_simple_content_done(
     state: SimpleStreamingState,
 ) -> list[StreamingResponsesResponse]:
+    # The SDK uses separate Logprob classes for delta, done and output items.
+    # Preserve the same token records through each typed event constructor.
+    logprobs = [item.model_dump() for item in state.content_logprobs]
     part = ResponseOutputText(
         type="output_text",
         text=state.accumulated_text,
         annotations=[],
+        logprobs=logprobs or None,
     )
     events: list[StreamingResponsesResponse] = [
         ResponseTextDoneEvent(
@@ -904,7 +912,7 @@ def emit_simple_content_done(
             output_index=state.output_index,
             content_index=state.content_index,
             text=state.accumulated_text,
-            logprobs=[],
+            logprobs=logprobs,
             item_id=state.current_item_id,
         ),
         ResponseContentPartDoneEvent(

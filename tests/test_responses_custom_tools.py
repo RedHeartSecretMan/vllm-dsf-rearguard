@@ -99,70 +99,77 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
                     "model": "deepseek-flash", "input": [{"role": "user", "content": [image, video]}],
                 })
 
-    def test_deepseek_named_tools_parse_bare_json_through_real_parser(self):
+    def production_parser(self, request):
         from types import SimpleNamespace
 
-        from vllm.parser.deepseek_v4 import DeepSeekV4Parser
-        from vllm.parser.deepseek_v41 import DeepSeekV41Parser
+        from vllm.parser import ParserManager
 
-        tokenizer = SimpleNamespace(get_vocab=lambda: {}, all_special_tokens=[], all_special_ids=[])
-        arguments = json.dumps({"input": 'line one\nline "two" \\ end <think>literal</think>'})
-        for parser_class in (DeepSeekV4Parser, DeepSeekV41Parser):
-            for kind in ("custom", "function"):
+        vocab = {text: index for index, text in enumerate(
+            ("<think>", "</think>", "<｜DSML｜ calls>", "</｜DSML｜ calls>"), 1)}
+        tokenizer = SimpleNamespace(get_vocab=lambda: vocab, all_special_tokens=list(vocab),
+                                    all_special_ids=list(vocab.values()))
+        parser_class = ParserManager.get_parser(
+            tool_parser_name="deepseek_v41", reasoning_parser_name="deepseek_v41",
+            enable_auto_tools=True, model_name="deepseek-ai/DeepSeek-V4.1-Flash-1017",
+        )
+        parser = parser_class(tokenizer, tools=request.tools,
+                              chat_template_kwargs=request.chat_template_kwargs)
+        self.assertFalse(parser.tool_parser.supports_required_and_named)
+        parser.adjust_request(request)
+        return parser, tokenizer
+
+    def test_production_parser_enables_named_custom_dsml_grammar(self):
+        for kind in ("custom", "function"):
+            for choice in ({"type": kind, "name": "record_text"}, "required"):
                 for thinking in (False, True):
                     tool = {"type": kind, "name": "record_text"}
                     if kind == "function":
                         tool["parameters"] = {"type": "object", "properties": {"input": {"type": "string"}}}
                     request = self.ResponsesRequest.model_validate({
-                        "model": "deepseek-flash", "input": "Call record_text.",
-                        "tools": [tool], "tool_choice": {"type": kind, "name": "record_text"},
-                        "chat_template_kwargs": {"thinking": thinking},
+                        "model": "deepseek-flash", "input": "Call record_text.", "tools": [tool],
+                        "tool_choice": choice, "chat_template_kwargs": {"thinking": thinking},
                     })
-                    parser = parser_class(tokenizer, tools=request.tools, chat_template_kwargs={"thinking": thinking})
-                    text = ("Considering the call.</think>" if thinking else "") + arguments
-                    with self.subTest(parser=parser_class.__name__, kind=kind, thinking=thinking):
-                        reasoning, content, calls = parser.parse(text, request)
+                    parser, _ = self.production_parser(request)
+                    with self.subTest(kind=kind, choice=choice, thinking=thinking):
+                        self.assertIsNotNone(request.structured_outputs)
+                        grammar = request.structured_outputs.structural_tag
+                        self.assertIn("record_text", grammar)
+                        self.assertIn("DSML", grammar)
+                        value = 'line one\nline "two" \\ end'
+                        native = ('<｜DSML｜ calls><｜DSML｜ invoke name="record_text">'
+                                  '<｜DSML｜ parameter name="input" string="true">' + value +
+                                  '</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>')
+                        text = ("Considering the call.</think>" if thinking else "") + native
+                        reasoning, content, calls = parser.parse(text, request, enable_auto_tools=True)
                         self.assertEqual(reasoning, "Considering the call." if thinking else None)
                         self.assertIsNone(content)
                         self.assertEqual(len(calls or []), 1)
                         self.assertEqual(calls[0].name, "record_text")
-                        self.assertEqual(calls[0].arguments, arguments)
+                        self.assertEqual(json.loads(calls[0].arguments), {"input": value})
 
-    def test_deepseek_named_tool_json_stream_reaches_tool_events(self):
-        from types import SimpleNamespace
-
-        from vllm.parser.deepseek_v41 import DeepSeekV41Parser
-
-        tokenizer = SimpleNamespace(get_vocab=lambda: {}, all_special_tokens=[], all_special_ids=[])
-        value = 'line one\nline "two" \\ end <think>literal</think> <｜DSML｜ calls>'
-        arguments = json.dumps({"input": value}, ensure_ascii=False)
+    def test_production_parser_streams_custom_and_function_events(self):
+        value = 'line one\nline "two" \\ end'
         for kind in ("custom", "function"):
             for thinking in (False, True):
                 tool = {"type": kind, "name": "record_text"}
                 if kind == "function":
                     tool["parameters"] = {"type": "object", "properties": {"input": {"type": "string"}}}
                 request = self.ResponsesRequest.model_validate({
-                    "model": "deepseek-flash", "input": "Call record_text.",
-                    "tools": [tool], "tool_choice": {"type": kind, "name": "record_text"},
+                    "model": "deepseek-flash", "input": "Call record_text.", "tools": [tool],
+                    "tool_choice": {"type": kind, "name": "record_text"},
                     "chat_template_kwargs": {"thinking": thinking}, "stream": True,
                 })
-                parser = DeepSeekV41Parser(tokenizer, tools=request.tools, chat_template_kwargs={"thinking": thinking})
-                text = ("Considering the call.</think>" if thinking else "") + arguments
+                parser, _ = self.production_parser(request)
+                native = ('<｜DSML｜ calls><｜DSML｜ invoke name="record_text">'
+                          '<｜DSML｜ parameter name="input" string="true">' + value +
+                          '</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>')
+                text = ("Considering the call.</think>" if thinking else "") + native
                 chunks = [text[index:index + 3] for index in range(0, len(text), 3)]
-                deltas = [parser.parse_delta(chunk, [], request, finished=index == len(chunks) - 1)
+                deltas = [parser.parse_delta(chunk, [], request, prompt_token_ids=[], finished=index == len(chunks) - 1)
                           for index, chunk in enumerate(chunks)]
                 with self.subTest(kind=kind, thinking=thinking):
+                    self.assertIsNotNone(request.structured_outputs)
                     self.assertFalse(any(delta.content for delta in deltas if delta))
-                    calls = [call for delta in deltas if delta for call in delta.tool_calls or []]
-                    self.assertTrue(calls)
-                    self.assertEqual("".join(call.function.arguments or "" for call in calls), arguments)
-                    self.assertEqual([call.function.name for call in calls if call.function.name], ["record_text"])
-                    ids = [call.id for call in calls if call.id]
-                    self.assertEqual(len(ids), 1)
-                    self.assertTrue(any(delta and delta.tool_calls for delta in deltas[:-1]))
-                    # Responses finalization reparses with the same parser.
-                    final_calls = parser.parse(text, request)[2]
-                    self.assertEqual(final_calls[0].id, ids[0])
                     processor = self.SimpleStreamingEventProcessor(tools=request.tools)
                     events = []
                     for delta in deltas:
@@ -181,8 +188,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
                     event_name = "response.custom_tool_call_input.done" if kind == "custom" else "response.function_call_arguments.done"
                     done = [event for event in events if event.type == event_name]
                     self.assertEqual(len(done), 1)
-                    self.assertEqual(done[0].input if kind == "custom" else done[0].arguments,
-                                     value if kind == "custom" else arguments)
+                    self.assertEqual(done[0].input if kind == "custom" else json.loads(done[0].arguments)["input"], value)
 
     def test_deepseek_auto_json_remains_text_and_native_dsml_still_parses(self):
         from types import SimpleNamespace
@@ -214,11 +220,11 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
 
         from vllm.entrypoints.openai.responses.context import SimpleContext
         from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
-        from vllm.parser.deepseek_v41 import DeepSeekV41Parser
         from vllm.sampling_params import SamplingParams
 
-        async def exercise(kind):
-            tokenizer = SimpleNamespace(get_vocab=lambda: {}, all_special_tokens=[], all_special_ids=[])
+        async def exercise(kind, with_logprobs=False, with_logging=False):
+            from openai.types.responses import response_text_delta_event
+
             tools = [] if kind == "text" else [{"type": kind, "name": "record_text"}]
             if kind == "function":
                 tools[0]["parameters"] = {"type": "object", "properties": {"input": {"type": "string"}}}
@@ -226,9 +232,15 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
                 "model": "deepseek-flash", "input": "Test streaming.", "tools": tools,
                 "tool_choice": {"type": kind, "name": "record_text"} if tools else "none",
                 "chat_template_kwargs": {"thinking": False}, "stream": True, "store": True,
+                "include": ["message.output_text.logprobs"] if with_logprobs else [],
+                "top_logprobs": 1 if with_logprobs else 0,
             })
-            parser = DeepSeekV41Parser(tokenizer, tools=request.tools, chat_template_kwargs={"thinking": False})
-            text = "ACCEPTANCE_OK" if kind == "text" else json.dumps({"input": "streamed value"})
+            parser, tokenizer = self.production_parser(request)
+            text = "ACCEPTANCE_OK" if kind == "text" else (
+                '<｜DSML｜ calls><｜DSML｜ invoke name="record_text">'
+                '<｜DSML｜ parameter name="input" string="true">streamed value'
+                '</｜DSML｜ parameter></｜DSML｜ invoke></｜DSML｜ calls>'
+            )
             context = Mock(spec=SimpleContext)
             context.response_parser = parser
             context.num_prompt_tokens = 20
@@ -238,19 +250,30 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
             context.all_turn_metrics = []
             context.kv_transfer_params = context.ec_transfer_params = None
             context.final_output = SimpleNamespace(
-                outputs=[SimpleNamespace(text=text, finish_reason="stop")], prompt_token_ids=[])
+                outputs=[SimpleNamespace(text=text, token_ids=[], finish_reason="stop")], prompt_token_ids=[])
             server = object.__new__(OpenAIServingResponses)
             server.use_harmony = False
             server.parser = parser
+            server.enable_log_outputs = with_logging
+            server.request_logger = Mock() if with_logging else None
             server._initialize_tool_sessions = AsyncMock()
             server.response_store = {}
             server.response_store_lock = asyncio.Lock()
             server._make_response_output_items = Mock(side_effect=AssertionError("stream must not reparse"))
+            logprob_batches = [[response_text_delta_event.Logprob(
+                token=text[index:index + 3], logprob=-0.25,
+                bytes=list(text[index:index + 3].encode()),
+                top_logprobs=[response_text_delta_event.LogprobTopLogprob(
+                    token="alternative", logprob=-2.0, bytes=list(b"alternative"),
+                )],
+            )] for index in range(0, len(text), 3)]
+            server._create_stream_response_logprobs = Mock(side_effect=logprob_batches)
 
             async def chunks():
                 for index in range(0, len(text), 3):
                     context.last_output = SimpleNamespace(
                         outputs=[SimpleNamespace(text=text[index:index + 3], token_ids=[],
+                                                 logprobs=[{}] if with_logprobs else None,
                                                  finish_reason="stop" if index + 3 >= len(text) else None)],
                         prompt_token_ids=[],
                     )
@@ -267,10 +290,50 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
             stored = server.response_store[request.request_id]
             self.assertEqual([item.model_dump() for item in stored.output], items)
             server._make_response_output_items.assert_not_called()
+            if with_logprobs:
+                expected = [item.model_dump() for batch in logprob_batches for item in batch]
+                text_done = next(event for event in events if event.type == "response.output_text.done")
+                self.assertEqual([item.model_dump() for item in text_done.logprobs], expected)
+                self.assertEqual(items[0]["content"][0]["logprobs"], expected)
+                self.assertEqual([item.model_dump() for item in stored.output[0].content[0].logprobs], expected)
+            if with_logging:
+                server.request_logger.log_outputs.assert_called_once_with(
+                    request_id=request.request_id, outputs=text, output_token_ids=[],
+                    finish_reason="stop", is_streaming=False, delta=False,
+                )
 
         for kind in ("text", "custom", "function"):
             with self.subTest(kind=kind):
                 asyncio.run(exercise(kind))
+        with self.subTest(feature="logprobs"):
+            asyncio.run(exercise("text", with_logprobs=True))
+        with self.subTest(feature="final output logging"):
+            asyncio.run(exercise("text", with_logging=True))
+
+    def test_content_logprobs_survive_done_and_reset_for_next_message(self):
+        from openai.types.responses import response_text_delta_event
+
+        logs = [response_text_delta_event.Logprob(
+            token=token, logprob=-0.1, bytes=list(token.encode()),
+            top_logprobs=[response_text_delta_event.LogprobTopLogprob(
+                token=token.upper(), logprob=-1.5, bytes=list(token.upper().encode()),
+            )],
+        ) for token in ("a", "b")]
+        processor = self.SimpleStreamingEventProcessor()
+        processor.open(self.StateType.CONTENT)
+        for logprob in logs:
+            processor.emit_delta(self.DeltaMessage(content=logprob.token), None,
+                                 get_logprobs=lambda _, value=logprob: [value])
+        events = processor.close_current()
+        expected = [item.model_dump() for item in logs]
+        self.assertEqual([item.model_dump() for item in events[0].logprobs], expected)
+        self.assertEqual([item.model_dump() for item in events[1].part.logprobs], expected)
+        self.assertEqual([item.model_dump() for item in events[2].item.content[0].logprobs], expected)
+        processor.open(self.StateType.CONTENT)
+        processor.emit_delta(self.DeltaMessage(content="no probabilities requested"), None)
+        following = processor.close_current()
+        self.assertEqual(following[0].logprobs, [])
+        self.assertIsNone(following[2].item.content[0].logprobs)
 
     def test_custom_tool_call_and_output_round_trip(self):
         request = self.ResponsesRequest.model_validate(
