@@ -19,7 +19,7 @@ class ChunkBudgetTests(unittest.TestCase):
     def receipt(self, profile="32k_mm_off"):
         chunk = "16384" if profile == "16k_mm_on" else "32768"
         flag = "--disable-chunked-mm-input" if profile == "32k_mm_off" else "--no-disable-chunked-mm-input"
-        command = ["serve", "model", "--tensor-parallel-size", "4", "--data-parallel-size", "2",
+        command = ["docker", "run", "-p", "127.0.0.1:6688:8000", "serve", "model", "--tensor-parallel-size", "4", "--data-parallel-size", "2",
                    "--data-parallel-size-local", "2", "--max-model-len", "1048576",
                    "--max-num-seqs", "128", "--max-num-batched-tokens", chunk,
                    "--gpu-memory-utilization", "0.9", "--api-server-count", "1",
@@ -45,6 +45,10 @@ class ChunkBudgetTests(unittest.TestCase):
         self.assertEqual(len(case["workload"]["cells"]), 11)
         self.assertEqual(case["workload"]["repeats"], 3)
         self.assertEqual(case["runner"], "scripts.benchmarks.chunk_budget")
+        self.assertEqual(case["test_port"], 6688)
+        self.assertEqual(chunk_budget.DEFAULT_BASE_URL, "http://127.0.0.1:6688")
+        for profile in case["variants"]:
+            self.assertEqual(chunk_budget.command_option(profile["extra_launch"], "--port"), "6688")
         with self.assertRaisesRegex(SystemExit, "scripts.benchmarks.chunk_budget"):
             bench_ab.measure("unused", case, case["variants"][0], 1)
 
@@ -99,6 +103,18 @@ class ChunkBudgetTests(unittest.TestCase):
         receipt["command"].remove("--enable-eplb")
         with self.assertRaisesRegex(ValueError, "enable-eplb"):
             chunk_budget.verify_profile(self.case()["variants"][0], receipt)
+
+    def test_profile_rejects_formal_service_and_old_test_ports(self):
+        profile = self.case()["variants"][0]
+        for port in (6789, 8005):
+            receipt = self.receipt()
+            receipt["command"][receipt["command"].index("-p") + 1] = f"127.0.0.1:{port}:8000"
+            with self.assertRaisesRegex(ValueError, "test port binding"):
+                chunk_budget.verify_profile(profile, receipt)
+        changed = copy.deepcopy(profile)
+        changed["extra_launch"][changed["extra_launch"].index("--port") + 1] = "6789"
+        with self.assertRaisesRegex(ValueError, "test port 6688"):
+            chunk_budget.verify_profile(changed, self.receipt())
 
     def test_measure_requires_cold_cache_and_a_real_video_boundary(self):
         cell = {"id": "video", "kind": "video", "osl": 128, "concurrency": 1, "min_input_tokens": 16385}

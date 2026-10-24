@@ -20,7 +20,6 @@ from typing import Any
 from scripts.acceptance.media import load_fixtures, prepare_fixtures, sha256
 from scripts.acceptance.visual import command_option, media_part
 from scripts.bench_common import (
-    DEFAULT_BASE_URL,
     MODEL,
     chat_body,
     completion_body,
@@ -36,6 +35,9 @@ from scripts.bench_common import (
     write_report,
 )
 from scripts.benchmarks.bench_ab import variant_plan
+
+TEST_PORT = 6688
+DEFAULT_BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
 
 
 def case_config() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -143,6 +145,10 @@ def load_workload(path: Path) -> dict[str, Any]:
 def verify_profile(profile: dict[str, Any], receipt: dict[str, Any]) -> None:
     command = receipt["command"]
     extra = profile["extra_launch"]
+    if command_option(extra, "--port") != str(TEST_PORT):
+        raise ValueError(f"profile requires test port {TEST_PORT}")
+    if command_option(command, "-p") != f"127.0.0.1:{TEST_PORT}:8000":
+        raise ValueError(f"profile requires test port binding 127.0.0.1:{TEST_PORT}:8000")
     chunk = extra[extra.index("--chunk") + 1]
     expected = {
         "--tensor-parallel-size": "4", "--data-parallel-size": "2",
@@ -267,6 +273,8 @@ def main() -> int:
     if args.plan:
         print(json.dumps({"profiles": {v["id"]: variant_plan(config, v) for v in case["variants"]}, "workload": case["workload"]}, indent=2))
         return 0
+    if args.base_url.rstrip("/") not in {DEFAULT_BASE_URL, f"http://localhost:{TEST_PORT}"}:
+        parser.error(f"chunk budget benchmarks require localhost test port {TEST_PORT}")
     if args.workload is None:
         parser.error("--workload is required")
     if args.prepare_workload:
