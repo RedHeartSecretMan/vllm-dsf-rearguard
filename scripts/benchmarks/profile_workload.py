@@ -235,9 +235,10 @@ def highres_video_case(artifact: dict[str, Any]) -> tuple[dict[str, Any], dict[s
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source,
                         "-vf", "scale=1200:1200", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                         "-movflags", "+faststart", str(path)], check=True)
-    body = visual.base_body(MODEL, [{"type": "text", "text":
-        'Identify distinct stages in chronological order, collapsing repeated frames. '
-        'Return only JSON {"numbers": [integer, ...], "colors": [string, ...]}.'},
-        visual.media_part(path, "video")])
-    expected = {k: artifact["fixtures"]["videos"]["long"][k] for k in ("numbers", "colors")}
+    fixtures = copy.deepcopy(artifact["fixtures"])
+    fixtures["videos"]["long"].update(path=str(path), sha256=sha256(path))
+    body, expected, _ = visual.build_case(
+        {"id": "visual-video-highres-semantic", "kind": "video", "fixtures": ["long"]},
+        MODEL, fixtures,
+    )
     return body, expected

@@ -80,6 +80,23 @@ class FrozenWorkloadTests(unittest.TestCase):
         self.assertEqual(sum(r["stream"] == "prefill" for r in rows), 15)
         self.assertEqual(max(r["at_s"] for r in rows), 280)
 
+    def test_highres_video_requests_visible_digits_without_disclosing_answers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "long-1200.mp4"
+            path.write_bytes(b"frozen-video")
+            frozen = {"fixture_directory": directory,
+                      "highres_video": {"path": str(path), "sha256": workload.sha256(path)},
+                      "fixtures": {"videos": {"long": {"path": str(path), "sha256": workload.sha256(path),
+                                     "numbers": [1, 2, 3], "colors": ["red", "green", "blue"]}}}}
+            body, expected = workload.highres_video_case(frozen)
+            prompt = body["messages"][0]["content"][0]["text"]
+            self.assertIn("read the black digits", prompt)
+            self.assertIn("white digit panels", prompt)
+            self.assertNotIn("[1, 2, 3]", prompt)
+            self.assertEqual(expected["numbers"], [1, 2, 3])
+            self.assertEqual(len(body["messages"][0]["content"]), 2)
+            self.assertEqual(body["messages"][0]["content"][1], workload.visual.media_part(path, "video"))
+
 
 if __name__ == "__main__":
     unittest.main()
