@@ -103,59 +103,134 @@ class MeasurementTests(unittest.TestCase):
 
 class WarmupTests(unittest.TestCase):
     def cell(self):
-        return {"id": "vision", "concurrency": 4, "osl": 1000,
+        return {"cell_id": "vision", "concurrency": 4, "osl": 1000,
                 "expected_input_by_index": [100, 102, 104, 100], "warmup_metric_timeout": 0}
 
     def factory(self, label, index):
-        return {"cache_salt": f"{label}:{index}", "max_tokens": 128, "prompt": [index]}
+        return {"cache_salt": f"{label}:{index}", "max_tokens": 2, "prompt": [index]}
 
-    def test_two_rounds_use_c2_and_prove_both_dp_engines_over_warmup(self):
+    def test_default_one_c2_osl2_round_stops_when_both_dp_are_proven(self):
         observer = MagicMock()
-        observer.snapshot.side_effect = [samples(), samples(100, 128, 0, 0),
-                                         samples(100, 128, 0, 0), samples(100, 128, 102, 128)]
-        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "PASS"}) as measure:
+        observer.snapshot.side_effect = [samples(), samples(100, 2, 102, 2)]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "PASS"}) as measured:
             result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / "warmup")
-            self.assertTrue((Path(tmp) / "warmup/round-1-metrics.json.gz").exists())
-            self.assertTrue((Path(tmp) / "warmup/metrics-final.json.gz").exists())
         self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["configured_rounds"], 1)
+        self.assertEqual(result["additional_round_count"], 0)
         self.assertTrue(result["both_dp_active"])
-        self.assertEqual(measure.call_count, 2)
-        salts = []
-        for call in measure.call_args_list:
-            _, bodies, cell, _, _ = call.args
-            self.assertEqual((len(bodies), cell["concurrency"], cell["osl"]), (2, 2, 128))
-            self.assertEqual(cell["expected_input_by_index"], [100, 102])
-            salts.extend(body["cache_salt"] for body in bodies)
+        measured.assert_called_once()
+        _, bodies, warm_cell, _, _ = measured.call_args.args
+        self.assertEqual((len(bodies), warm_cell["concurrency"], warm_cell["osl"]), (2, 2, 2))
+        self.assertEqual(warm_cell["expected_input_by_index"], [100, 102])
+
+    def test_missing_dp_coverage_adds_a_fresh_round_with_recorded_reason(self):
+        observer = MagicMock()
+        observer.snapshot.side_effect = [samples(), samples(100, 2, 0, 0),
+                                         samples(100, 2, 0, 0), samples(100, 2, 102, 2)]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "PASS"}) as measured:
+            output = Path(tmp) / "warmup"
+            result = pm.warmup(BASE, self.factory, self.cell(), observer, output)
+            saved = json.loads((output / "report.json").read_text())
+            self.assertTrue((output / "round-1-metrics.json.gz").exists())
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(measured.call_count, 2)
+        self.assertEqual(result["additional_round_count"], 1)
+        reason = saved["additional_rounds"][0]["reason"]
+        self.assertEqual(reason["code"], "dp_not_covered")
+        self.assertEqual(reason["missing_engines"], ["1"])
+        self.assertEqual(reason["dp_deltas"]["1"], {"prompt_tokens": 0, "generation_tokens": 0})
+        salts = [body["cache_salt"] for call in measured.call_args_list for body in call.args[1]]
         self.assertEqual(len(salts), len(set(salts)))
 
-    def test_missing_or_inactive_second_dp_fails(self):
-        cases = ([{}, {}], [samples(), samples(100, 128, 0, 0), samples(100, 128, 0, 0), samples(200, 256, 0, 0)])
-        with tempfile.TemporaryDirectory() as tmp:
-            for index, snapshots in enumerate(cases):
-                observer = MagicMock()
-                observer.snapshot.side_effect = snapshots
-                with patch.object(pm, "measure", return_value={"status": "PASS"}):
-                    result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / str(index))
-                self.assertEqual(result["status"], "FAIL")
-                self.assertTrue(result["errors"])
+    def test_delayed_metrics_are_polled_without_extra_gpu_work(self):
+        observer = MagicMock()
+        observer.snapshot.side_effect = [samples(), samples(), samples(100, 2, 102, 2)]
+        cell = {**self.cell(), "warmup_metric_timeout": 15}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm.time, "sleep"), patch.object(
+            pm, "measure", return_value={"status": "PASS"}
+        ) as measured:
+            result = pm.warmup(BASE, self.factory, cell, observer, Path(tmp) / "warmup")
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(measured.call_count, 1)
+        self.assertEqual(observer.snapshot.call_count, 3)
+        self.assertEqual(result["additional_round_count"], 0)
+
+    def test_unknown_metrics_fail_before_gpu_work(self):
+        observer = MagicMock()
+        observer.snapshot.return_value = {}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure") as measured:
+            result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / "warmup")
+        self.assertEqual(result["status"], "FAIL")
+        measured.assert_not_called()
+        self.assertEqual(result["additional_round_count"], 0)
+
+    def test_missing_dp_cannot_run_past_additional_round_budget(self):
+        observer = MagicMock()
+        observer.snapshot.return_value = samples()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "PASS"}) as measured:
+            result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / "warmup")
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(measured.call_count, 3)
+        self.assertEqual(result["additional_round_count"], 2)
+        self.assertIn("budget exhausted", result["errors"][0])
+        self.assertTrue(all(r["reason"]["code"] == "dp_not_covered" for r in result["additional_rounds"]))
+
+    def test_explicit_not_ready_response_can_be_replaced_with_evidence(self):
+        unavailable = {"status": "FAIL", "requests": [{"status": "FAIL", "error": "HTTP Error 503: Service Unavailable"}]}
+        observer = MagicMock()
+        observer.snapshot.side_effect = [samples(), samples(), samples(), samples(100, 2, 102, 2)]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", side_effect=[unavailable, {"status": "PASS"}]):
+            result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / "warmup")
+        self.assertEqual(result["status"], "PASS")
+        reason = result["additional_rounds"][0]["reason"]
+        self.assertEqual(reason["code"], "service_not_ready")
+        self.assertIn("HTTP Error 503", reason["errors"][0])
+        self.assertEqual(result["rounds"][0]["measurement"], unavailable)
+
+    def test_cold_cache_shape_and_compilation_failures_are_not_retried(self):
+        results = [
+            {"status": "FAIL", "requests": [row(100, cache=12)]},
+            {"status": "FAIL", "requests": [{"status": "FAIL", "error": "input tokens 99 != expected 100"}]},
+            {"status": "FAIL", "requests": [{"status": "FAIL", "error": "Triton CompilationError: unsupported operation"}]},
+        ]
+        for failed in results:
+            observer = MagicMock()
+            observer.snapshot.side_effect = [samples(), samples(100, 2, 102, 2)]
+            with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value=failed) as measured:
+                result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / "warmup")
+            self.assertEqual(result["status"], "FAIL")
+            self.assertEqual(measured.call_count, 1)
+            self.assertEqual(result["additional_round_count"], 0)
 
     def test_duplicate_salts_or_output_budget_mismatch_fail_before_measurement(self):
-        for factory in (lambda label, index: {"cache_salt": "same", "max_tokens": 128},
+        for factory in (lambda label, index: {"cache_salt": "same", "max_tokens": 2},
                         lambda label, index: {"cache_salt": f"{label}:{index}", "max_tokens": 1000}):
             observer = MagicMock()
             observer.snapshot.return_value = samples()
-            with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure") as measure:
+            with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure") as measured:
                 result = pm.warmup(BASE, factory, self.cell(), observer, Path(tmp) / "warmup")
             self.assertEqual(result["status"], "FAIL")
-            measure.assert_not_called()
+            measured.assert_not_called()
 
-    def test_warmup_measurement_failure_is_not_ignored(self):
+    def test_counter_reset_invalidates_warmup_without_extra_gpu_work(self):
         observer = MagicMock()
-        observer.snapshot.side_effect = [samples(), samples(100, 128, 100, 128)]
-        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "FAIL"}):
+        observer.snapshot.side_effect = [samples(100, 2, 102, 2), samples(99, 4, 204, 4)]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "PASS"}) as measured:
             result = pm.warmup(BASE, self.factory, self.cell(), observer, Path(tmp) / "warmup")
         self.assertEqual(result["status"], "FAIL")
-        self.assertIn("round 1 failed", result["errors"][0])
+        self.assertIn("counters reset", result["errors"][0])
+        self.assertEqual(measured.call_count, 1)
+        self.assertEqual(result["additional_round_count"], 0)
+
+    def test_prefill_warmup_keeps_osl_one(self):
+        cell = {**self.cell(), "osl": 1}
+        observer = MagicMock()
+        observer.snapshot.side_effect = [samples(), samples(100, 1, 102, 1)]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(pm, "measure", return_value={"status": "PASS"}) as measured:
+            result = pm.warmup(BASE, lambda label, index: {"cache_salt": f"{label}:{index}", "max_tokens": 1},
+                               cell, observer, Path(tmp) / "warmup")
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(measured.call_args.args[2]["osl"], 1)
 
 
 class PlanIntegrationTests(unittest.TestCase):
@@ -175,13 +250,13 @@ class PlanIntegrationTests(unittest.TestCase):
 
         def factory(label, index):
             body = profile_workload.request_body(artifact, cell, label, index)
-            body["max_tokens"] = min(cell["osl"], 128)
+            body["max_tokens"] = cell.get("warmup_osl", min(cell["osl"], 2))
             return body
 
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(pm.bench_common, "run_burst", return_value=([result_row], 2.0)):
                 measured = pm.measure(BASE, [body], cell, Path(tmp) / "measurement")
-            with patch.object(pm.bench_common, "run_burst", return_value=([row(4096), row(4096)], 2.0)):
+            with patch.object(pm.bench_common, "run_burst", return_value=([{**row(4096), "output_tokens": 2}, {**row(4096), "output_tokens": 2}], 2.0)):
                 warmed = pm.warmup(BASE, factory, cell, observer, Path(tmp) / "warmup")
         for result in (measured, warmed):
             self.assertEqual(result["status"], "PASS")
@@ -193,7 +268,7 @@ class PlanIntegrationTests(unittest.TestCase):
 
         cell = {"cell_id": "startup-graphs", "kind": "matrix", "isl": 1024, "osl": 128,
                 "concurrency": 256, "dataset": "random", "source_case": {"seed": 1017},
-                "warmup_concurrency": 256, "warmup_osl": 128}
+                "warmup_rounds": 2, "warmup_concurrency": 256, "warmup_osl": 128}
         artifact = {"run_id": "global-integration", "token_pool": [100, 200, 300]}
         observer = MagicMock()
         observer.snapshot.side_effect = [samples(), samples(131072, 16384, 131072, 16384),

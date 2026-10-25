@@ -4,6 +4,7 @@ import copy
 import gzip
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +22,7 @@ class ProfileReportTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.policy = report.default_policy()
+        self.policy["ppl_windows"] = 1  # Small synthetic dataset; production policy requires 134.
         self.schedule = []
         self.state = {"status": "PHASE_PASS", "inputs_sha256": digest("inputs"), "profiles": []}
         for context in self.policy["contexts"]:
@@ -77,6 +79,18 @@ class ProfileReportTests(unittest.TestCase):
                 "input_tps": total_in / elapsed, "output_tps": total_out / elapsed,
                 "total_tps": (total_in + total_out) / elapsed, "concurrency": concurrency}
 
+    def warmup(self, version=1, global_scope=False, osl=2):
+        count = 2 if version == 1 or global_scope else 1
+        value = {"status": "PASS", "concurrency": 256 if global_scope else 2,
+                 "osl": 128 if global_scope else min(osl, 128 if version == 1 else 2),
+                 "rounds": [{"round": i + 1, "measurement": {"status": "PASS", "cache_verified": True}}
+                            for i in range(count)], "errors": [], "both_dp_active": True,
+                 "dp_before": {str(i): {"prompt_tokens": 0, "generation_tokens": 0} for i in range(2)},
+                 "dp_after": {str(i): {"prompt_tokens": 100, "generation_tokens": 10} for i in range(2)}}
+        if version == 2:
+            value.update(configured_rounds=count, additional_round_count=0, additional_rounds=[])
+        return value
+
     def add_attempt(self, profile, *, attempt_id=None, state="PASS"):
         ident = attempt_id or profile["id"]
         entry = {**profile, "attempt_id": ident, "status": state}
@@ -101,9 +115,17 @@ class ProfileReportTests(unittest.TestCase):
         ]
         axis = {k: profile[k] for k in ("context", "memory", "chunk")}
         self.save(directory / "plan.json", {"profile": axis, "cells": cells, "counts": {"total": 4}})
-        rounds = [{**self.measurement([self.row()], elapsed), "payload_sha256": digest(f"repeat-{i}")}
-                  for i, elapsed in enumerate((1, 2, 4))]
-        actual = [{"cell_id": cells[0]["cell_id"], "case_id": "matrix_single", "status": "PASS", "measurements": rounds}]
+        rounds = []
+        for index, elapsed in enumerate((1, 2, 4), 1):
+            bodies = [{"prompt": [index] * 8, "max_tokens": 2, "cache_salt": f"repeat-{index}"}]
+            measured = {**self.measurement([self.row()], elapsed), "payload_sha256": report._payload_digest(bodies)}
+            folder = directory / "cells" / cells[0]["cell_id"].replace("/", "__") / f"repeat-{index}"
+            self.save(folder / "report.json", measured)
+            self.save(folder / "request-payloads.json.gz", bodies)
+            self.save(folder / "request-metrics.json.gz", measured["requests"])
+            rounds.append(measured)
+        actual = [{"cell_id": cells[0]["cell_id"], "case_id": "matrix_single", "status": "PASS", "measurements": rounds,
+                   "warmup": self.warmup()}]
         if profile.get("only", "all") == "all":
             actual += [
                 {"cell_id": "quality-ppl-wikitext", "status": "PASS", "measurements": [
@@ -115,12 +137,13 @@ class ProfileReportTests(unittest.TestCase):
         summary = {"status": state, "profile": axis, "source": {"source_manifest_sha256": digest("source")},
                    "endpoint": {"image_id": launch["image_id"], "container_id": ident},
                    "frozen_inputs_sha256": digest("inputs"), "selection": profile.get("only", "all"),
-                   "global_warmup": {"status": "PASS"}, "observation": {"status": "PASS"}, "cells": actual}
+                   "global_warmup": self.warmup(global_scope=True), "observation": {"status": "PASS"}, "cells": actual}
         self.save(directory / "launch.json", launch)
         self.save(directory / "summary.json", summary)
         return entry
 
     def build(self, **kwargs):
+        kwargs.setdefault("policy", self.policy)
         return report.build_report(self.root, [self.root / "schedule.json"],
                                    gpqa_result=self.gpqa, soak_result=self.soak, **kwargs)
 
@@ -130,12 +153,74 @@ class ProfileReportTests(unittest.TestCase):
         change(value)
         self.save(path, value)
 
+    def version2(self, ident, *, inherited=False):
+        directory = self.root / ident / "results"
+        plan = json.loads((directory / "plan.json").read_text())
+        summary = json.loads((directory / "summary.json").read_text())
+        policy = {"id": "single_formal_v2", "primary_repeat": 1, "formal_repetitions": 1}
+        plan.update(policy_version=2, measurement_policy=policy)
+        summary.update(policy_version=2, measurement_policy=policy)
+        for cell in plan["cells"]:
+            if cell["status"] in report.ELIGIBLE:
+                cell.update(legacy_repeats=cell["repeats"], repeats=1)
+        for cell in summary["cells"]:
+            if cell["status"] == "PASS":
+                cell["measurements"] = cell["measurements"][:1]
+                if "warmup" in cell and not inherited:
+                    cell["warmup"] = self.warmup(version=2)
+                    for path in (directory / "cells" / cell["cell_id"].replace("/", "__")).glob("repeat-*"):
+                        if path.name != "repeat-1":
+                            shutil.rmtree(path)
+        if not inherited:
+            summary["global_warmup"] = self.warmup(version=2, global_scope=True)
+        self.save(directory / "plan.json", plan)
+        self.save(directory / "summary.json", summary)
+        return directory, plan, summary
+
+    def resumed(self, completed=2):
+        source = self.root / "p0/results"
+        target_id = "p0-v2"
+        target = self.root / target_id / "results"
+        shutil.copytree(source, target)
+        source_summary = json.loads((source / "summary.json").read_text())
+        cell_id = source_summary["cells"][0]["cell_id"]
+        source_summary.update(status="IN_PROGRESS", cells=[source_summary["cells"][0]])
+        source_summary["cells"][0].update(status="IN_PROGRESS", measurements=source_summary["cells"][0]["measurements"][:completed])
+        for path in (source / "cells" / cell_id.replace("/", "__")).glob("repeat-*"):
+            if int(path.name.split("-")[-1]) > completed:
+                shutil.rmtree(path)
+        self.save(source / "summary.json", source_summary)
+        self.state["profiles"][0]["status"] = "POLICY_HANDOFF"
+        entry = {**self.state["profiles"][0], "attempt_id": target_id, "status": "PASS"}
+        self.state["profiles"].append(entry)
+        self.save_state()
+        _, _, summary = self.version2(target_id, inherited=True)
+
+        def ref(path):
+            return {"path": str(path.resolve()), "sha256": report._sha(path)}
+        quiescent = self.root / "handoff/quiescence.json"
+        self.save(quiescent, {"running": 0, "waiting": 0})
+        handoff = self.root / "handoff/handoff.json"
+        self.save(handoff, {"status": "POLICY_HANDOFF", "source_attempt_id": "p0", "current_cell": cell_id,
+                            "no_inflight": True, "pending_unsent": list(range(completed + 1, 4)),
+                            "source_snapshot_sha256": report._sha(source / "summary.json"), "rawrefs": [ref(quiescent)]})
+        summary["resume_provenance"] = {
+            "schema_version": 1, "handoff": ref(handoff),
+            "sources": {"p0": {name: ref(source / (name + ".json")) for name in ("plan", "summary", "launch")}},
+            "cells": {cell_id: {"source_attempt_id": "p0", "source_cell_id": cell_id, "primary_repeat": 1}},
+        }
+        summary["global_warmup_reuse"] = "same live container and source proof"
+        self.save(target / "summary.json", summary)
+        return source, target, handoff
+
     def test_complete_grid_and_once_evidence_can_pass(self):
         result = self.build()
         self.assertEqual(result["status"], "FINAL_PASS", (result["errors"], result["pending"]))
         self.assertEqual(len(result["primary_profile_ids"]), len(self.policy["contexts"]) * self.policy["memory_levels"])
         metrics = result["attempts"][0]["cells"]["matrix_single/random/i8-o2-c1"]["metrics"]
-        self.assertEqual(metrics["output_tps"], {"median": 1, "min": .5, "max": 2})
+        self.assertEqual(metrics["output_tps"], 2)
+        reference = result["attempts"][0]["cells"]["matrix_single/random/i8-o2-c1"]["reference_measurements"]
+        self.assertEqual([(row["repeat"], row["metrics"]["output_tps"]) for row in reference], [(2, 1), (3, .5)])
         self.assertIn("FINAL_PASS", report.markdown(result))
 
     def test_missing_group_and_missing_repetition_fail(self):
@@ -149,7 +234,7 @@ class ProfileReportTests(unittest.TestCase):
         self.assertTrue(any("repetitions" in e for e in result["errors"]))
 
     def test_wrong_payload_or_kind_never_gets_a_percentage(self):
-        self.mutate_summary("p1", lambda s: s["cells"][0]["measurements"][1].update(payload_sha256=digest("different")))
+        self.mutate_summary("p1", lambda s: s["cells"][0]["measurements"][0].update(payload_sha256=digest("different")))
         result = self.build()
         self.assertEqual(result["status"], "FAIL")
         comparison = result["comparisons"]["p1"]["cells"]["matrix_single/random/i8-o2-c1"]
@@ -233,7 +318,7 @@ class ProfileReportTests(unittest.TestCase):
         self.save_state()
         result = self.build(allow_incomplete=True)
         self.assertEqual(result["status"], "IN_PROGRESS", result["errors"])
-        result = report.build_report(self.root, [self.root / "schedule.json"], allow_incomplete=False)
+        result = report.build_report(self.root, [self.root / "schedule.json"], allow_incomplete=False, policy=self.policy)
         self.assertEqual(result["status"], "FAIL")
         self.assertTrue(any("gpqa" in e for e in result["pending"]))
         self.assertTrue(any("soak" in e for e in result["pending"]))
@@ -247,6 +332,115 @@ class ProfileReportTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertTrue(any("omits planned cells" in e for e in result["errors"]))
         self.assertTrue(any("full offered-load window" in e for e in result["errors"]))
+
+    def test_v2_single_measurement_uses_repeat_one_without_median_or_range(self):
+        self.version2("p0")
+        result = self.build()
+        self.assertEqual(result["status"], "FINAL_PASS", result["errors"])
+        cell = result["attempts"][0]["cells"]["matrix_single/random/i8-o2-c1"]
+        self.assertEqual(cell["metrics"]["output_tps"], 2)
+        self.assertEqual(cell["reference_measurements"], [])
+        self.assertEqual(result["comparisons"]["p1"]["cells"]["matrix_single/random/i8-o2-c1"]["change_pct"]["output_tps"], 0)
+        self.assertTrue(result["comparisons"]["p1"]["cells"]["matrix_single/random/i8-o2-c1"]["warmup_policy_differs"])
+        self.assertNotIn("median", report.markdown(result))
+
+    def test_v1_cannot_shrink_repetitions_without_an_explicit_new_policy(self):
+        path = self.root / "p0/results/plan.json"
+        plan = json.loads(path.read_text())
+        plan["cells"][0]["repeats"] = 1
+        self.save(path, plan)
+        self.mutate_summary("p0", lambda s: s["cells"][0].update(measurements=s["cells"][0]["measurements"][:1]))
+        result = self.build()
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("policy v1" in e for e in result["errors"]))
+
+    def test_v2_rejects_wrong_warmup_and_unknown_policy(self):
+        _, plan, summary = self.version2("p0")
+        original = copy.deepcopy(summary)
+        for problem in ("budget", "dp", "version"):
+            summary = copy.deepcopy(original)
+            if problem == "budget":
+                summary["cells"][0]["warmup"]["osl"] = 128
+            elif problem == "dp":
+                summary["global_warmup"]["dp_after"]["1"]["generation_tokens"] = 0
+            else:
+                summary["policy_version"] = 3
+            self.save(self.root / "p0/results/summary.json", summary)
+            self.assertEqual(self.build()["status"], "FAIL", problem)
+
+    def test_handoff_accepts_complete_primary_and_retains_unsent_reference_scope(self):
+        self.resumed(completed=2)
+        result = self.build()
+        self.assertEqual(result["status"], "FINAL_PASS", (result["errors"], result["pending"]))
+        self.assertEqual(result["selected_attempts"]["p0"], "p0-v2")
+        old = result["attempts"][0]
+        self.assertEqual((old["raw_status"], old["raw_summary_status"]), ("POLICY_HANDOFF", "IN_PROGRESS"))
+        self.assertEqual(old["resolution_status"], "POLICY_HANDOFF_REFERENCED")
+        cell = result["attempts"][-1]["cells"]["matrix_single/random/i8-o2-c1"]
+        self.assertEqual([r["repeat"] for r in cell["reference_measurements"]], [2])
+        self.assertEqual(cell["metrics"]["output_tps"], 2)
+
+    def test_handoff_after_all_three_saved_rounds_matches_the_real_boundary(self):
+        self.resumed(completed=3)
+        result = self.build()
+        self.assertEqual(result["status"], "FINAL_PASS", (result["errors"], result["pending"]))
+        self.assertEqual(len(result["attempts"][-1]["cells"]["matrix_single/random/i8-o2-c1"]["reference_measurements"]), 2)
+
+    def test_handoff_without_a_verified_continuation_stays_pending(self):
+        self.resumed()
+        self.state["profiles"].pop()
+        self.save_state()
+        shutil.rmtree(self.root / "p0-v2")
+        result = self.build(allow_incomplete=True)
+        self.assertNotEqual(result["status"], "FINAL_PASS")
+        self.assertTrue(any("handoff awaits" in p for p in result["pending"]))
+
+    def test_resume_rejects_tampered_primary_raw_metrics_and_false_handoff(self):
+        source, target, handoff = self.resumed()
+        original = json.loads((target / "summary.json").read_text())
+        self.mutate_summary("p0-v2", lambda s: s["cells"][0]["measurements"][0].update(elapsed_s=99))
+        self.assertEqual(self.build()["status"], "FAIL")
+        self.save(target / "summary.json", original)
+        raw = next((source / "cells").glob("*/repeat-1/request-metrics.json.gz"))
+        self.save(raw, [])
+        result = self.build()
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("raw request metrics" in e for e in result["errors"]))
+        self.save(raw, original["cells"][0]["measurements"][0]["requests"])
+        value = json.loads(handoff.read_text())
+        value["no_inflight"] = False
+        self.save(handoff, value)
+        original["resume_provenance"]["handoff"]["sha256"] = report._sha(handoff)
+        self.save(target / "summary.json", original)
+        self.assertEqual(self.build()["status"], "FAIL")
+
+    def test_actual_source_failure_cannot_be_reclassified_as_policy_handoff(self):
+        source, target, handoff = self.resumed()
+        value = json.loads((source / "summary.json").read_text())
+        value["cells"][0]["measurements"][1]["status"] = "FAIL"
+        self.save(source / "summary.json", value)
+        sidecar = json.loads(handoff.read_text())
+        sidecar["source_snapshot_sha256"] = report._sha(source / "summary.json")
+        self.save(handoff, sidecar)
+        resumed = json.loads((target / "summary.json").read_text())
+        resumed["resume_provenance"]["sources"]["p0"]["summary"]["sha256"] = report._sha(source / "summary.json")
+        resumed["resume_provenance"]["handoff"]["sha256"] = report._sha(handoff)
+        self.save(target / "summary.json", resumed)
+        self.assertEqual(self.build()["status"], "FAIL")
+
+    def test_production_policy_rejects_a_single_window_receipt_marked_pass(self):
+        self.policy["ppl_windows"] = 134
+        for ident in (p["id"] for p in self.schedule):
+            def complete(summary):
+                ppl = summary["cells"][1]["measurements"][0]
+                ppl.update(windows=134, rows=ppl["rows"] * 134, scored_tokens=15 * 134)
+            self.mutate_summary(ident, complete)
+        self.assertEqual(self.build()["status"], "FINAL_PASS")
+        self.mutate_summary("p0", lambda s: s["cells"][1]["measurements"][0].update(
+            windows=1, rows=[{"status": "PASS", "scored_tokens": 15, "cached_tokens": 0}], scored_tokens=15))
+        result = self.build()
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("p0:" in error and "PPL windows incomplete" in error for error in result["errors"]))
 
 
 if __name__ == "__main__":

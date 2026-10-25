@@ -52,7 +52,8 @@ def run(base, frozen, case, receipt, output: Path, timeout=3600):
         with observer, ThreadPoolExecutor(max_workers=case["concurrency"]) as pool, \
                 (output / "completed-requests.jsonl").open("x", buffering=1) as journal:
             warm_cell = {"cell_id": "stress-warmup", "isl": case["isl"], "osl": 128,
-                         "concurrency": case["concurrency"], "warmup_concurrency": case["concurrency"]}
+                         "concurrency": case["concurrency"], "warmup_concurrency": case["concurrency"],
+                         "warmup_rounds": 2, "warmup_osl": 128}
             def warm_factory(label, number):
                 request = body(number)
                 request["max_tokens"] = 128

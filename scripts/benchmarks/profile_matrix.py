@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gzip
 import json
+import re
+import shutil
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,6 +107,103 @@ def resolve_cell(cell: dict[str, Any], frozen: dict[str, Any], context: int) -> 
     return result
 
 
+def resume_evidence(directory: Path, plan: dict, frozen: dict, receipt: dict, handoff_path: Path | None, *, endpoint: dict):
+    """Read immutable prior results; retain only the original primary repeat.
+
+    An interrupted source is reusable only at an explicitly recorded drained
+    policy handoff. A real failure is never converted into a completed cell.
+    """
+    source_path = directory / "summary.json"
+    source = json.loads(source_path.read_text())
+    old_plan = json.loads((directory / "plan.json").read_text())
+    old_launch = json.loads((directory / "launch.json").read_text())
+    if source.get("frozen_inputs_sha256") != frozen["sha256"] or source["profile"] != plan["profile"]:
+        raise ValueError("resume inputs or complete profile differ")
+    if source.get("endpoint") != endpoint:
+        raise ValueError("resume service identity or start time differs; startup warmup cannot be inherited")
+    for key in ("image_id", "source_manifest_sha256", "container_id"):
+        if old_launch.get(key) != receipt.get(key):
+            raise ValueError(f"resume {key} differs; existing service cannot be adopted")
+    if old_launch["command"] != receipt["command"]:
+        raise ValueError("resume launch flags differ")
+    if (source.get("global_warmup", {}).get("status") != "PASS"
+            or source["global_warmup"].get("both_dp_active") is not True
+            or source.get("observation", {}).get("status") != "PASS"):
+        raise ValueError("resume requires completed startup warmup and observer evidence")
+    if any(source.get(key) for key in ("error", "traceback", "endpoint_error", "observation_error")):
+        raise ValueError("failed source cannot become PASS by reducing repetitions")
+    if any(c["status"] == "FAIL" for c in source["cells"]):
+        raise ValueError("source contains an unresolved cell failure")
+    ident = directory.parent.name
+    handoff = None
+    if source["status"] != "PASS":
+        if handoff_path is None:
+            raise ValueError("incomplete source requires an explicit policy handoff")
+        handoff = json.loads(handoff_path.read_text())
+        if not (handoff.get("status") == "POLICY_HANDOFF" and handoff.get("no_inflight") is True
+                and handoff.get("source_attempt_id") == ident
+                and handoff.get("source_snapshot_sha256") == inputs.sha256(source_path)
+                and not handoff.get("pending_unsaved_payloads")):
+            raise ValueError("handoff does not bind a saved, drained source")
+        for ref in handoff.get("rawrefs", []):
+            if inputs.sha256(Path(ref["path"])) != ref["sha256"]:
+                raise ValueError("handoff raw evidence hash mismatch")
+        if not handoff.get("rawrefs"):
+            raise ValueError("handoff lacks raw evidence")
+        gauges = handoff.get("metrics", [])
+        if (len(gauges) != 4 or not all(line.startswith(("vllm:num_requests_running{", "vllm:num_requests_waiting{"))
+                                       and float(line.rsplit(" ", 1)[1]) == 0 for line in gauges)):
+            raise ValueError("handoff lacks drained DP counter evidence")
+        labels = {tuple(re.search(r'num_requests_(running|waiting)\{.*?engine="([01])"', line).groups())
+                  for line in gauges if re.search(r'num_requests_(running|waiting)\{.*?engine="([01])"', line)}
+        if labels != {(kind, engine) for kind in ("running", "waiting") for engine in ("0", "1")}:
+            raise ValueError("handoff does not cover both DP gauges")
+    expected = {c["cell_id"]: c for c in plan["cells"]}
+    old_expected = {c["cell_id"]: c for c in old_plan["cells"]}
+    identity_keys = ("case_id", "group", "kind", "dataset", "isl", "osl", "concurrency", "source_case",
+                     "source_launch", "expected_input_by_index", "actual_expected_input", "execution_variant")
+    reusable = {}
+    for row in source["cells"]:
+        cell_id = row["cell_id"]
+        rounds = row.get("measurements", [])
+        if not rounds:
+            continue
+        if cell_id not in expected or any(expected[cell_id].get(k) != old_expected[cell_id].get(k) for k in identity_keys):
+            raise ValueError(f"resume cell identity differs: {cell_id}")
+        if row["status"] != "PASS" and not (handoff and row["status"] == "IN_PROGRESS" and handoff["current_cell"] == cell_id):
+            raise ValueError(f"resume source cell is not complete or handed off: {cell_id}")
+        if not all(r.get("status") == "PASS" for r in rounds) or any(row.get(k) for k in ("error", "traceback")):
+            raise ValueError(f"resume retains unresolved failure: {cell_id}")
+        cell = expected[cell_id]
+        if execution_kind(cell) == "performance":
+            if row.get("warmup", {}).get("status") != "PASS":
+                raise ValueError(f"resume warmup incomplete: {cell_id}")
+            bodies = [inputs.request_body(frozen, cell, "repeat-1", i) for i in range(cell["concurrency"])]
+            folder = directory / "cells" / cell_id.replace("/", "__")
+            with gzip.open(folder / "repeat-1/request-payloads.json.gz", "rt") as stream:
+                if json.load(stream) != bodies:
+                    raise ValueError(f"resume primary payload differs from frozen repeat-1: {cell_id}")
+            for repeat, measurement in enumerate(rounds, 1):
+                raw = json.loads((folder / f"repeat-{repeat}/report.json").read_text())
+                if raw != measurement or raw.get("cache_verified") is not True:
+                    raise ValueError(f"resume raw report or cold cache differs: {cell_id}")
+        reused = copy.deepcopy(row)
+        reused.update(status="PASS", measurements=copy.deepcopy(rounds[:1]))
+        reusable[cell_id] = reused
+
+    def ref(path):
+        return {"path": str(path.resolve()), "sha256": inputs.sha256(path)}
+
+    provenance = {"schema_version": 1,
+                  "sources": {ident: {"plan": ref(directory / "plan.json"), "summary": ref(source_path),
+                                      "launch": ref(directory / "launch.json")}},
+                  "cells": {cell_id: {"source_attempt_id": ident, "source_cell_id": cell_id, "primary_repeat": 1}
+                            for cell_id in reusable}}
+    if handoff_path:
+        provenance["handoff"] = ref(handoff_path)
+    return reusable, provenance, source["global_warmup"]
+
+
 def run_profile(args) -> int:
     from scripts.benchmarks.profile_acceptance import (
         run_core,
@@ -143,6 +243,11 @@ def run_profile(args) -> int:
               "source": inputs.source_identity(), "frozen_inputs_sha256": frozen["sha256"],
               "started_at": datetime.now(timezone.utc).isoformat(), "cells": [],
               "selection": args.only, "warmup_policy": config["warmup"]}
+    report.update(policy_version=plan["policy_version"], measurement_policy=plan["measurement_policy"])
+    reused, inherited_global = {}, None
+    if getattr(args, "resume_from", None):
+        reused, provenance, inherited_global = resume_evidence(args.resume_from, plan, frozen, receipt, args.handoff, endpoint=endpoint)
+        report["resume_provenance"] = provenance
     observer = ServiceObserver(inputs.BASE_URL, receipt["container_id"], output / "observation")
 
     def checkpoint():
@@ -150,13 +255,17 @@ def run_profile(args) -> int:
 
     try:
         with observer:
-            startup = {"cell_id": "startup-graphs", "kind": "matrix", "isl": 1024, "osl": 128,
-                       "concurrency": 256, "dataset": "random", "source_case": {"seed": 1017},
-                       "warmup_concurrency": 256, "warmup_osl": 128}
+            global_policy = config["warmup"]["global"]
+            startup = {"cell_id": "startup-graphs", "kind": "matrix", "isl": 1024, "osl": global_policy["output_tokens"],
+                       "concurrency": global_policy["concurrency"], "dataset": "random", "source_case": {"seed": 1017},
+                       "warmup_concurrency": global_policy["concurrency"], "warmup_osl": global_policy["output_tokens"],
+                       "warmup_rounds": global_policy["rounds"]}
             def startup_factory(label, index):
                 return inputs.request_body(frozen, startup, label, index)
-            global_warm = warmup(inputs.BASE_URL, startup_factory, startup, observer, output / "global-warmup")
+            global_warm = inherited_global or warmup(inputs.BASE_URL, startup_factory, startup, observer, output / "global-warmup")
             report["global_warmup"] = global_warm
+            if inherited_global:
+                report["global_warmup_reuse"] = "Same running container; source proof and unchanged deployment bound by resume_provenance."
             checkpoint()
             if global_warm["status"] != "PASS":
                 raise RuntimeError("DP startup warmup failed")
@@ -167,6 +276,13 @@ def run_profile(args) -> int:
                     report["cells"].append({"cell_id": cell["cell_id"], "status": cell["status"], "reason": cell["reason"]})
                     continue
                 directory = output / "cells" / cell["cell_id"].replace("/", "__")
+                if cell["cell_id"] in reused:
+                    row = reused[cell["cell_id"]]
+                    source_folder = args.resume_from / "cells" / cell["cell_id"].replace("/", "__")
+                    shutil.copytree(source_folder, directory)
+                    report["cells"].append(row)
+                    checkpoint()
+                    continue
                 row = {"cell_id": cell["cell_id"], "case_id": cell["case_id"], "group": cell["group"],
                        "status": "IN_PROGRESS", "measurements": []}
                 report["cells"].append(row)
@@ -174,6 +290,10 @@ def run_profile(args) -> int:
                 try:
                     if execution_kind(cell) == "performance":
                         warm_cell = copy.deepcopy(cell)
+                        per_cell = config["warmup"]["per_cell"]
+                        warm_cell.update(warmup_rounds=per_cell["rounds"], warmup_concurrency=per_cell["concurrency"],
+                                         warmup_osl=min(cell["osl"], per_cell["output_tokens"]),
+                                         warmup_max_additional_rounds=per_cell["max_additional_rounds"])
                         if cell["kind"] == "vision_mix":
                             maximum = max(cell["source_case"]["image_counts"])
                             warm_cell["source_case"]["image_counts"] = [maximum]
@@ -182,7 +302,7 @@ def run_profile(args) -> int:
                             warm_cell["encoder_warmup"] = "maximum-image-count inputs on both DP instances"
                         def factory(label, index, selected=warm_cell):
                             body = inputs.request_body(frozen, selected, label, index)
-                            body["max_tokens"] = min(selected["osl"], 128)
+                            body["max_tokens"] = selected["warmup_osl"]
                             return body
                         row["warmup"] = warmup(inputs.BASE_URL, factory, warm_cell, observer, directory / "warmup")
                         if row["warmup"]["status"] != "PASS":
@@ -260,6 +380,8 @@ def main() -> int:
     parser.add_argument("--run-id", default="profile-20261025")
     parser.add_argument("--only", choices=("all", "matrix"), default="all")
     parser.add_argument("--timeout", type=float, default=3600)
+    parser.add_argument("--resume-from", type=Path, help="Prior immutable results directory, with explicit provenance")
+    parser.add_argument("--handoff", type=Path, help="Saved drained policy-handoff manifest for an interrupted source")
     args = parser.parse_args()
     if args.base_url != inputs.BASE_URL:
         parser.error("all profiling requests must use http://127.0.0.1:6688")

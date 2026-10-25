@@ -378,13 +378,16 @@ def measure(base: str, bodies: list[dict[str, Any]], cell: dict[str, Any], out: 
     concurrency = int(cell["concurrency"])
     if not 1 <= concurrency <= len(bodies):
         raise ValueError("concurrency must be positive and no larger than the request count")
+    measurement_started_at = _now()
     rows, elapsed = bench_common.run_burst(base, bodies, concurrency, timeout, **expected)
+    measurement_finished_at = _now()
     if expected_by_index is not None:
         for index, row in enumerate(rows):
             if row["status"] == "PASS" and row["input_tokens"] != expected_by_index[index]:
                 row.update(status="FAIL", error=f"request {index} input tokens {row['input_tokens']} != expected {expected_by_index[index]}")
     report = bench_common.summarize(rows, elapsed, cell_id=cell_id, case_id=cell.get("case_id", cell_id), concurrency=concurrency, osl=cell["osl"])
     report["payload_sha256"] = bench_common.workload_digest(bodies)
+    report.update(measurement_started_at=measurement_started_at, measurement_finished_at=measurement_finished_at)
     report["cache_verified"] = bench_common.verify_cache(rows, "cold")
     if not report["cache_verified"]:
         report["status"] = "FAIL"
@@ -406,36 +409,79 @@ def measure(base: str, bodies: list[dict[str, Any]], cell: dict[str, Any], out: 
     return report
 
 
+def _dp_coverage(before: dict[str, dict[str, float]], after: dict[str, dict[str, float]]):
+    if set(before) != set(after):
+        raise MetricsUnavailableError("DP engine identities changed during warmup")
+    deltas = {engine: {key: after[engine][key] - value for key, value in values.items()}
+              for engine, values in before.items()}
+    if any(value < 0 for values in deltas.values() for value in values.values()):
+        raise MetricsUnavailableError("DP token counters reset during warmup")
+    missing = [engine for engine, values in deltas.items() if any(value <= 0 for value in values.values())]
+    return deltas, missing
+
+
+def _readiness_errors(result: dict[str, Any]) -> list[str]:
+    """Retry only explicit service-unavailable responses, never cache/shape errors."""
+    rows = result.get("requests", [])
+    failed = [str(row.get("error", "")) for row in rows if row.get("status") != "PASS"]
+    good = [row for row in rows if row.get("status") == "PASS"]
+    if failed and all(re.search(r"HTTP(?: Error)? 503\b|server (?:is )?not ready|service (?:is )?not ready", error, re.I) for error in failed):
+        if all(row.get("cached_tokens") == 0 for row in good):
+            return failed
+    return []
+
+
 def warmup(
     base: str, bodies_factory: Callable[[str, int], dict[str, Any]], cell: dict[str, Any],
     observer: ServiceObserver, out: Path, timeout: float = 3600,
 ) -> dict[str, Any]:
-    """Warm the original input shape twice and prove activity on both DP engines.
+    """Warm one input shape with explicit evidence for any additional round.
 
-    The factory receives (round_label, request_index); it must supply a distinct
-    cache_salt and max_tokens matching warmup_osl. Defaults are C2 and OSL<=128.
-    A separate global C256 warmup is the controller's responsibility.
+    Per-cell defaults are one C2 round with OSL=min(cell OSL, 2). The controller
+    supplies warmup_rounds=2, warmup_concurrency=256, warmup_osl=128 for service
+    initialization. Factories receive (round_label, index) and must supply a
+    distinct cache_salt and the declared warmup output budget.
+
+    Missing DP coverage may add at most warmup_max_additional_rounds (default 2)
+    after waiting for asynchronous metrics. Explicit HTTP 503/not-ready failures
+    can be replaced with fresh requests; cache, shape, unknown metric and actual
+    compilation failures stop immediately. No cross-cell warmup reuse is assumed.
     """
     require_test_endpoint(base)
     cell_id = _cell_id(cell)
     output = Path(out)
     output.mkdir(parents=True, exist_ok=False)
-    rounds = int(cell.get("warmup_rounds", 2))
+    rounds = int(cell.get("warmup_rounds", 1))
+    extra_rounds = int(cell.get("warmup_max_additional_rounds", 2))
     concurrency = int(cell.get("warmup_concurrency", 2))
-    osl = int(cell.get("warmup_osl", min(cell["osl"], 128)))
-    if rounds < 2 or not 2 <= concurrency <= 256 or not 1 <= osl <= cell["osl"]:
-        raise ValueError("warmup requires >=2 rounds, concurrency 2..256 and OSL in 1..cell OSL")
+    osl = int(cell.get("warmup_osl", min(cell["osl"], 2)))
+    metric_timeout = float(cell.get("warmup_metric_timeout", 15))
+    if rounds < 1 or extra_rounds < 0 or not 2 <= concurrency <= 256 or not 1 <= osl <= cell["osl"] or metric_timeout < 0:
+        raise ValueError("warmup requires >=1 configured round, >=0 additional rounds, C2..256 and OSL in 1..cell OSL")
     warm_cell = {**cell, "osl": osl, "concurrency": concurrency}
     if cell.get("expected_input_by_index"):
         expected_inputs = cell["expected_input_by_index"]
         warm_cell["expected_input_by_index"] = [expected_inputs[index % len(expected_inputs)] for index in range(concurrency)]
-    report: dict[str, Any] = {"status": "FAIL", "cell_id": cell_id, "case_id": cell.get("case_id", cell_id), "concurrency": concurrency,
-                              "osl": osl, "rounds": [], "errors": []}
+    report: dict[str, Any] = {
+        "status": "IN_PROGRESS", "cell_id": cell_id, "case_id": cell.get("case_id", cell_id),
+        "concurrency": concurrency, "osl": osl, "configured_rounds": rounds,
+        "max_additional_rounds": extra_rounds, "rounds": [], "additional_rounds": [], "errors": [],
+    }
     seen_salts: set[str] = set()
     first_totals = None
+    successful_rounds = 0
+    not_ready_rounds = []
+    trigger: dict[str, Any] = {"code": "configured_warmup"}
     try:
-        for index in range(rounds):
-            label = f"{cell_id}-warmup-{index + 1}"
+        for index in range(rounds + extra_rounds):
+            attempt = index + 1
+            round_report: dict[str, Any] = {"round": attempt, "status": "IN_PROGRESS", "trigger": trigger}
+            report["rounds"].append(round_report)
+            if attempt > rounds:
+                report["additional_rounds"].append({"round": attempt, "reason": trigger})
+            # Persist the reason before sending any additional GPU work.
+            _write_json(output / "report.json", report)
+            label = f"{cell_id}-warmup-{attempt}"
             before_samples = observer.snapshot()
             before = engine_token_totals(before_samples)
             if first_totals is None:
@@ -448,34 +494,55 @@ def warmup(
                 if body.get("max_tokens") != osl:
                     raise ValueError(f"warmup factory max_tokens must equal warmup_osl={osl}")
                 seen_salts.add(salt)
-            result = measure(base, bodies, warm_cell, output / f"round-{index + 1}", timeout)
+            result = measure(base, bodies, warm_cell, output / f"round-{attempt}", timeout)
             after_samples = observer.snapshot()
             after = engine_token_totals(after_samples)
-            deltas = {engine: {key: after.get(engine, {}).get(key, 0) - value for key, value in values.items()}
-                      for engine, values in before.items()}
-            _write_gzip(output / f"round-{index + 1}-metrics.json.gz", {"before": before_samples, "after": after_samples})
-            dp_verified = set(before) == set(after) and all(value > 0 for values in deltas.values() for value in values.values())
-            report["rounds"].append({"round": index + 1, "measurement": result, "dp_before": before,
-                                     "dp_after": after, "dp_deltas": deltas, "both_dp_active": dp_verified})
+            deltas, missing = _dp_coverage(before, after)
+            round_report.update(status=result["status"], measurement=result, dp_before=before,
+                                dp_after=after, dp_deltas=deltas, both_dp_active=not missing)
+            _write_gzip(output / f"round-{attempt}-metrics.json.gz", {"before": before_samples, "after": after_samples})
             if result["status"] != "PASS":
-                raise ValueError(f"warmup round {index + 1} failed")
-        deadline = time.monotonic() + float(cell.get("warmup_metric_timeout", 15))
-        while True:
-            cumulative = {engine: {key: after.get(engine, {}).get(key, 0) - value for key, value in values.items()}
-                          for engine, values in first_totals.items()}
-            active = set(first_totals) == set(after) and all(value > 0 for values in cumulative.values() for value in values.values())
-            if active or time.monotonic() >= deadline:
-                break
-            # Engines publish asynchronously; allow their counters to catch up.
-            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
-            after_samples = observer.snapshot()
-            after = engine_token_totals(after_samples)
-        _write_gzip(output / "metrics-final.json.gz", after_samples)
-        report.update(dp_before=first_totals, dp_after=after, dp_deltas=cumulative, both_dp_active=active)
-        if not active:
-            raise ValueError("warmup did not advance both engines' prompt/generation counters")
-        report["status"] = "PASS"
+                readiness = _readiness_errors(result)
+                if not readiness:
+                    raise ValueError(f"warmup round {attempt} failed")
+                not_ready_rounds.append({"round": attempt, "errors": readiness})
+                trigger = {"code": "service_not_ready", "failed_round": attempt, "errors": readiness}
+            else:
+                successful_rounds += 1
+                if successful_rounds < rounds:
+                    trigger = ({"code": "replace_not_ready_round", "failed_rounds": not_ready_rounds}
+                               if not_ready_rounds else {"code": "configured_warmup"})
+                else:
+                    # Do not mistake delayed publication for missing DP execution.
+                    poll_started = time.monotonic()
+                    deadline = poll_started + metric_timeout
+                    while True:
+                        cumulative, missing = _dp_coverage(first_totals, after)
+                        if not missing or time.monotonic() >= deadline:
+                            break
+                        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+                        after_samples = observer.snapshot()
+                        after = engine_token_totals(after_samples)
+                    waited = time.monotonic() - poll_started
+                    _write_gzip(output / "metrics-final.json.gz", after_samples)
+                    report.update(dp_before=first_totals, dp_after=after, dp_deltas=cumulative,
+                                  both_dp_active=not missing, successful_rounds=successful_rounds)
+                    round_report["metrics_wait_s"] = waited
+                    if not missing:
+                        report["status"] = "PASS"
+                        break
+                    trigger = {"code": "dp_not_covered", "missing_engines": missing,
+                               "dp_deltas": cumulative, "metrics_wait_s": waited}
+            _write_json(output / "report.json", report)
+            if attempt == rounds + extra_rounds:
+                raise ValueError(f"warmup additional-round budget exhausted: {trigger}")
     except Exception as error:
-        report["errors"].append(f"{type(error).__name__}: {error}")
+        report["status"] = "FAIL"
+        detail = f"{type(error).__name__}: {error}"
+        report["errors"].append(detail)
+        if report["rounds"] and report["rounds"][-1]["status"] == "IN_PROGRESS":
+            report["rounds"][-1].update(status="FAIL", error=detail)
+    report["successful_rounds"] = successful_rounds
+    report["additional_round_count"] = len(report["additional_rounds"])
     _write_json(output / "report.json", report)
     return report

@@ -1,6 +1,19 @@
 {
   "model": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
   "runner": "scripts.benchmarks.profile_matrix",
+  "policy_version": 2,
+  "measurement_policy": {
+    "id": "single_formal_v2",
+    "primary_repeat": 1,
+    "formal_repetitions": 1,
+    "legacy": {
+      "policy_version": 1,
+      "performance_repetitions": 3,
+      "primary_repeat": 1,
+      "retained_repeats": [2, 3],
+      "include_retained_in_primary": false
+    }
+  },
   "source_catalogs": ["regular", "long_tail", "core", "visual", "responses", "quality"],
   "test_port": 6688,
   "contexts": [1048576, 524288, 262144],
@@ -8,11 +21,23 @@
   "chunk_candidates": [16384, 32768],
   "baseline_chunk": 16384,
   "fixed_launch": ["--parallel", "tp4dp2", "--dspark", "5", "--max-seqs", "256", "--experimental", "stacked-kv", "--experimental", "bounded-prefill", "--no-disable-chunked-mm-input", "--responses-store", "--port", "6688"],
-  "repetitions": {"matrix": 3, "short_performance": 3, "long_tail_burst": 3, "long_capacity": 1, "mixed": 1, "functional": 1, "ppl": 1},
+  "repetitions": {"matrix": 1, "short_performance": 1, "long_tail_burst": 1, "long_capacity": 1, "mixed": 1, "functional": 1, "ppl": 1},
   "once_only": ["quality-gpqa-diamond", "long_soak_1024_c64"],
   "quality": {"ppl_window_tokens": 2048, "ppl_stride": 2048, "ppl_request_form": "echo", "ppl_top_k": 1, "gpqa_repetitions": 1},
   "cache": {"kv": "cold, unique salt per cell/repetition/request; require cached_tokens=0", "encoder": "reused media, warmup on both DP instances; report separately from KV"},
-  "warmup": {"dp_instances": 2, "minimum_rounds": 2, "verify_per_engine_counter_increments": true},
+  "warmup": {
+    "dp_instances": 2,
+    "verify_per_engine_counter_increments": true,
+    "global": {"rounds": 2, "concurrency": 256, "output_tokens": 128, "require_both_dp": true},
+    "per_cell": {
+      "rounds": 1,
+      "concurrency": 2,
+      "output_tokens": 2,
+      "require_both_dp": true,
+      "max_additional_rounds": 2,
+      "additional_rounds": "only_if_dp_coverage_or_explicit_not_ready"
+    }
+  },
   "fallback_memory": {"lower": 0.90, "step": 0.01, "policy": "retain failures; find a stable common upper bound across all contexts, then use lower/midpoint/upper"},
   "mixed_comparison": {"variant": "fixed_arrival_schedule", "reason": "closed-loop fixed-duration runs otherwise submit different request counts", "duration_s": 300, "decode_batches": 5, "decode_batch_interval_s": 60, "decode_requests_per_batch": 64, "prefill_requests": 15, "prefill_interval_s": 20, "prefill_max_inflight": 2}
 }

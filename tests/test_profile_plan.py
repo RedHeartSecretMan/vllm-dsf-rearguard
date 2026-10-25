@@ -49,7 +49,8 @@ class ProfilePlanTests(unittest.TestCase):
                 self.assertEqual(sum(c["status"] == "APPLICABLE" for c in matrix), applicable)
                 for row in matrix:
                     self.assertEqual(row["status"] == "APPLICABLE", row["isl"] + row["osl"] <= context)
-                    self.assertEqual(row["requested_repeats"], 3)
+                    self.assertEqual(row["requested_repeats"], 1)
+                    self.assertEqual(row["legacy_repeats"], 3)
 
     def test_needle_admission_includes_output_budget(self):
         plan = profile_plan.group_plan(524288)
@@ -113,11 +114,12 @@ class ProfilePlanTests(unittest.TestCase):
 
     def test_repeats_and_mixed_admission_match_the_requested_categories(self):
         plan = profile_plan.group_plan(1048576)
-        three = {"short_concurrency", "single_prefill", "single_decode",
-                 "matrix_single", "matrix_concurrent", "tool_history_16384_c16", "vision_mix_4096_c4"}
+        performance = {"short_concurrency", "single_prefill", "single_decode",
+                       "matrix_single", "matrix_concurrent", "tool_history_16384_c16", "vision_mix_4096_c4"}
         for row in plan["cells"]:
-            if row["case_id"] in three:
-                self.assertEqual(row["requested_repeats"], 3)
+            if row["case_id"] in performance:
+                self.assertEqual(row["requested_repeats"], 1)
+                self.assertEqual(row["legacy_repeats"], 3)
             if row["catalog"].startswith("acceptance/"):
                 self.assertEqual(row["requested_repeats"], 1)
         mixed = next(r for r in plan["cells"] if r["kind"] == "mixed" and r["group"] == "long_tail")
@@ -126,6 +128,52 @@ class ProfilePlanTests(unittest.TestCase):
         small = profile_plan.group_plan(262144)
         mixed_small = next(r for r in small["cells"] if r["case_id"] == mixed["case_id"])
         self.assertEqual(mixed_small["status"], "NOT_APPLICABLE")
+
+    def test_v2_counts_once_scope_and_preserved_legacy_selection(self):
+        totals = []
+        for context, applicable in ((262144, 76), (524288, 80), (1048576, 85)):
+            plan = profile_plan.group_plan(context)
+            self.assertEqual(plan["policy_version"], 2)
+            policy = plan["measurement_policy"]
+            self.assertEqual(policy["id"], "single_formal_v2")
+            self.assertEqual(policy["primary_repeat"], 1)
+            self.assertEqual(policy["legacy"]["policy_version"], 1)
+            self.assertEqual(policy["legacy"]["retained_repeats"], [2, 3])
+            self.assertFalse(policy["legacy"]["include_retained_in_primary"])
+            self.assertEqual(plan["counts"]["applicable"], applicable)
+            self.assertEqual(plan["counts"]["repeats"], applicable)
+            self.assertEqual(plan["counts"]["once_repeats"], 2)
+            totals.append(plan["counts"]["repeats"])
+        self.assertEqual(sum(totals) * 3, 723)
+
+    def test_repetition_counts_follow_policy_instead_of_copied_dimensions(self):
+        original = Path.read_text
+        def changed(path, *args, **kwargs):
+            text = original(path, *args, **kwargs)
+            if path == profile_plan.CONFIG_DIR / "benchmarks/profile_matrix.json":
+                config = json.loads(text)
+                config["repetitions"]["matrix"] = 2
+                return json.dumps(config)
+            return text
+        with patch.object(Path, "read_text", changed):
+            plan = profile_plan.group_plan(1048576)
+        self.assertEqual(plan["counts"]["repeats"], 85 + 42)
+        self.assertTrue(all(c["requested_repeats"] == 2 for c in plan["cells"]
+                            if c["case_id"] in ("matrix_single", "matrix_concurrent")))
+        self.assertTrue(all(c["repeats"] == 1 for c in plan["cells"]
+                            if c["cell_id"].startswith("capacity_fixed_profile_")))
+
+    def test_v2_warmup_policy_keeps_global_decode_and_limits_per_cell_cost(self):
+        warmup = profile_plan.group_plan(1048576)["warmup"]
+        self.assertEqual(warmup["dp_instances"], 2)
+        self.assertTrue(warmup["verify_per_engine_counter_increments"])
+        self.assertEqual(warmup["global"], {"rounds": 2, "concurrency": 256,
+                                          "output_tokens": 128, "require_both_dp": True})
+        per_cell = warmup["per_cell"]
+        self.assertEqual((per_cell["rounds"], per_cell["concurrency"], per_cell["output_tokens"]), (1, 2, 2))
+        self.assertTrue(per_cell["require_both_dp"])
+        self.assertEqual(per_cell["max_additional_rounds"], 2)
+        self.assertEqual(per_cell["additional_rounds"], "only_if_dp_coverage_or_explicit_not_ready")
 
     def test_planning_does_not_mutate_catalogs_or_other_calls(self):
         first = profile_plan.catalog_inventory()

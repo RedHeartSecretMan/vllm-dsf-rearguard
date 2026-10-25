@@ -98,11 +98,14 @@ def run(args) -> int:
     schedule = json.loads(args.schedule.read_text())
     if not isinstance(schedule, list) or not schedule or len({p["id"] for p in schedule}) != len(schedule):
         raise ValueError("schedule must contain distinct, nonempty profile IDs")
+    if any(profile.get("resume_from") and not profile.get("adopt_receipt") for profile in schedule):
+        raise ValueError("resuming measurements requires adopting the same running service; refusing a deployment")
     frozen = load(args.inputs)
     state_path = args.directory / "campaign.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {
         "status": "IN_PROGRESS", "source": source_identity(), "inputs_sha256": frozen["sha256"], "profiles": [],
         "status_scope": "Only the explicitly supplied phase; final acceptance separately requires all nine grid points and once-only tests"}
+    state["active_policy_version"] = config["policy_version"]
     if state["inputs_sha256"] != frozen["sha256"]:
         raise ValueError("campaign input identity changed")
     previous = args.previous_container
@@ -116,7 +119,7 @@ def run(args) -> int:
             continue
         attempt = 1 + sum(p["id"] == profile["id"] for p in state["profiles"])
         profile = {**profile, "attempt_id": profile["id"] if attempt == 1 else f"{profile['id']}-attempt-{attempt}"}
-        entry = {**profile, "status": "STARTING", "attempt": attempt}
+        entry = {**profile, "status": "STARTING", "attempt": attempt, "policy_version": config["policy_version"]}
         state["profiles"].append(entry)
         write_json(state_path, state)
         try:
@@ -141,6 +144,10 @@ def run(args) -> int:
                           "--chunk", str(profile["chunk"]), "--launch-receipt", str(target / "launch.json"),
                           "--ppl-dataset", str(args.ppl_dataset), "--output", str(target / "results"),
                           "--only", profile.get("only", "all")]
+            if profile.get("resume_from"):
+                invocation += ["--resume-from", profile["resume_from"]]
+                if profile.get("handoff"):
+                    invocation += ["--handoff", profile["handoff"]]
             entry.update(status="RUNNING", runner_command=invocation)
             write_json(state_path, state)
             with (target / "runner.log").open("w") as stream:

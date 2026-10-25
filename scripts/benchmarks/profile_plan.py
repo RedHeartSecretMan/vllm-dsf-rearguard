@@ -21,6 +21,39 @@ CATALOGS = {
 }
 
 
+def _execution_policy() -> dict:
+    config = json.loads((CONFIG_DIR / "benchmarks/profile_matrix.json").read_text())
+    policy = {key: copy.deepcopy(config[key]) for key in
+              ("policy_version", "measurement_policy", "repetitions", "warmup")}
+    if type(policy["policy_version"]) is not int or policy["policy_version"] <= 0:
+        raise ValueError("profiling policy_version must be a positive integer")
+    if any(type(n) is not int or n <= 0 for n in policy["repetitions"].values()):
+        raise ValueError("profiling repetitions must be positive integers")
+    return policy
+
+
+def _apply_execution_policy(row: dict, policy: dict) -> None:
+    """Retain v1 audit metadata while deriving current counts from one policy."""
+    row["legacy_repeats"] = row["repeats"]
+    if row["group"] in ("ab", "excluded"):
+        # These describe independent experiments, not this profiling campaign.
+        row["measurement_policy"] = "independent_catalog"
+        return
+    row["policy_version"] = policy["policy_version"]
+    row["measurement_policy"] = policy["measurement_policy"]["id"]
+    if row["once_only"]:
+        return
+    if row["group"] == "regular":
+        category = ("long_capacity" if row["source_case"]["id"] == "long_request_capacity"
+                    else "matrix" if row["kind"] == "matrix" else "short_performance")
+    elif row["group"] == "long_tail":
+        category = "mixed" if row["kind"] == "mixed" else "long_tail_burst"
+    else:
+        category = "ppl" if row["kind"] == "ppl" else "functional"
+    row["repetition_category"] = category
+    row["repeats"] = policy["repetitions"][category]
+
+
 def _launch(config: dict, case: dict) -> list[str]:
     return list(config.get("launch", {}).get(case.get("launch"), [])) + list(case.get("extra_launch", []))
 
@@ -174,6 +207,7 @@ def _acceptance(catalog: str, config: dict, case: dict) -> list[dict]:
 
 def catalog_inventory() -> dict[str, Any]:
     """Return all source cases, expanded dimensions, variants and explicit derivatives."""
+    policy = _execution_policy()
     catalogs, configs = {}, {}
     for family, names in CATALOGS.items():
         for name in names:
@@ -214,6 +248,8 @@ def catalog_inventory() -> dict[str, Any]:
                    cell_id="visual-video-highres-semantic")
     catalogs["acceptance/visual"]["cells"].append(highres)
     all_cells = [row for catalog in catalogs.values() for row in catalog["cells"]]
+    for row in all_cells:
+        _apply_execution_policy(row, policy)
     ids = [row["cell_id"] for row in all_cells]
     if len(ids) != len(set(ids)):
         raise ValueError("expanded catalog cell IDs must be globally unique")
@@ -221,6 +257,9 @@ def catalog_inventory() -> dict[str, Any]:
         catalog["cell_count"] = len(catalog["cells"])
         catalog["derived_count"] = sum(c["derived"] for c in catalog["cells"])
     return {
+        "policy_version": policy["policy_version"],
+        "measurement_policy": policy["measurement_policy"],
+        "warmup": policy["warmup"],
         "catalogs": catalogs,
         "counts": {
             "catalogs": len(catalogs), "source_cases": sum(v["case_count"] for v in catalogs.values()),
@@ -276,6 +315,9 @@ def group_plan(context: int, chunk: int = 16384, memory: float = .90,
             cells.append(row)
     eligible = [c for c in cells if c["status"] in ("APPLICABLE", "PENDING_PREPARATION")]
     return {
+        "policy_version": inventory["policy_version"],
+        "measurement_policy": inventory["measurement_policy"],
+        "warmup": inventory["warmup"],
         "profile": {"context": context, "chunk": chunk, "memory": memory, "max_seqs": max_seqs,
                     "throttle": throttle, "disable_chunked_mm_input": False, "responses_store": True,
                     "api_server_count": 1, "test_port": 6688},

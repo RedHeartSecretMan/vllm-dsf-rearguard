@@ -33,10 +33,13 @@ class SoakTests(unittest.TestCase):
         effects = [{"container_id": "same"}, RuntimeError("container stopped")] if final_failure else None
         with patch.object(profile_soak, "verify_endpoint", return_value={"container_id": "same"}, side_effect=effects), \
                 patch.object(profile_soak, "ServiceObserver", Observer), \
-                patch.object(profile_soak, "warmup", return_value={"status": "PASS"}), \
+                patch.object(profile_soak, "warmup", return_value={"status": "PASS"}) as warmed, \
                 patch.object(profile_soak, "stream_request", side_effect=response):
             result = profile_soak.run(profile_soak.profile_workload.BASE_URL, frozen, case,
                                       {"container_id": "same"}, out)
+            factory, warm_cell = warmed.call_args.args[1:3]
+            self.assertEqual((warm_cell["warmup_rounds"], warm_cell["warmup_osl"]), (2, 128))
+            self.assertEqual(factory("decode-warmup", 0)["max_tokens"], warm_cell["warmup_osl"])
         return result, case, out
 
     def test_full_duration_then_drain_keeps_every_request_and_cache_check(self):
