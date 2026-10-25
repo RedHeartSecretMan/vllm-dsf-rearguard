@@ -531,6 +531,7 @@ def default_policy():
 
 def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path | None = None,
                  soak_result: Path | None = None, resolutions: Path | None = None,
+                 controlled_assessment: Path | None = None,
                  allow_incomplete: bool = False, reference: str | None = None,
                  policy: dict | None = None) -> dict:
     root, evidence = Path(campaign_dir).resolve(), Evidence()
@@ -556,11 +557,38 @@ def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path
         errors.append("schedule contains an unknown selection scope")
     if any(p["chunk"] not in policy["chunk_candidates"] for p in schedule.values()):
         errors.append("schedule chunk is outside declared candidates")
+    assessed = None
+    if controlled_assessment is not None:
+        try:
+            from scripts.benchmarks.profile_controlled_report import validate_receipt
+            assessed = validate_receipt(controlled_assessment, evidence)
+            _require(not assessed["validation_errors"], "controlled assessment contains invalid raw evidence")
+            matching = [row for row in controlled if row["id"] == assessed["profile_id"]]
+            _require(len(matching) == 1 and all(matching[0][key] == assessed["profile"][key]
+                                               for key in ("context", "memory", "chunk")),
+                     "controlled assessment does not match its scheduled configuration")
+            _require(assessed["candidate_outcome"] == "REJECTED", "unsupported controlled candidate disposition")
+        except (OSError, ValueError, KeyError, TypeError, EOFError) as error:
+            errors.append(f"invalid controlled assessment: {type(error).__name__}: {error}")
+            assessed = None
     attempts = [_attempt(root, entry, evidence, policy) for entry in state.get("profiles", [])]
+    # A later primary-only schedule cannot erase a controlled experiment that
+    # already ran. In particular, omitting --controlled-assessment must not
+    # make an ordinary primary replacement resolution valid for its failure.
+    historical_controlled = {entry["id"] for entry in state.get("profiles", []) if entry.get("only") == "matrix"}
+    scheduled_controlled = {profile["id"] for profile in controlled}
+    for ident in sorted(historical_controlled - scheduled_controlled):
+        errors.append(f"historical controlled profile must remain in the controlled schedule: {ident}")
+    controlled_ids = historical_controlled | scheduled_controlled
     ids = [a["attempt_id"] for a in attempts]
     if len(ids) != len(set(ids)):
         errors.append("duplicate attempt IDs in campaign state")
     known = set(ids)
+    if assessed is not None:
+        for ref in assessed["inputs"]["summaries"]:
+            path = Path(ref["path"]).resolve()
+            if path.is_relative_to(root):
+                known.add(path.relative_to(root).parts[0])
     for path in (gpqa_result, soak_result):
         if path is not None and Path(path).resolve().is_relative_to(root):
             known.add(Path(path).resolve().relative_to(root).parts[0])
@@ -569,6 +597,12 @@ def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path
             errors.append(f"untracked attempt directory must not be omitted: {directory.name}")
     selected = {}
     for ident, scheduled in schedule.items():
+        if assessed is not None and ident == assessed["profile_id"]:
+            if assessed["status"] != "COMPLETE_WITH_FAILURES" or assessed["coverage"]["not_run"]:
+                pending.append(f"{ident}: controlled coverage lacks {assessed['coverage']['not_run']} of 42 cells")
+            for missing in assessed.get("unresolved_failure_attempt_ids", []):
+                pending.append(f"{ident}: original failure {missing} lacks its own terminal evidence")
+            continue
         candidates = [a for a in attempts if a["profile_id"] == ident]
         passes = [a for a in candidates if a["complete"] and not a["validation_errors"]]
         if not passes:
@@ -593,6 +627,8 @@ def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path
             ident = row["attempt_id"]
             _require(ident in by_id and ident not in resolved, "resolution names an unknown/duplicate attempt")
             _require(by_id[ident]["raw_status"] == "FAIL" or by_id[ident].get("raw_summary_status") == "FAIL", "resolution target is not a failed attempt")
+            _require(by_id[ident]["profile_id"] not in controlled_ids,
+                     "controlled failures cannot be replaced by PASS configurations; require an independent controlled assessment")
             _require(isinstance(row.get("reason"), str) and row["reason"].strip(), "resolution requires a reason")
             replacements = row["replacement_profile_ids"]
             _require(isinstance(replacements, list) and replacements and all(p in selected for p in replacements), "resolution replacements must be validated PASS profiles in the final schedule")
@@ -610,7 +646,11 @@ def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path
                 attempt["resolution_status"] = "POLICY_HANDOFF_PENDING"
                 pending.append(f"{attempt['attempt_id']}: policy handoff awaits a validated continuation")
         failed = attempt["raw_status"] == "FAIL" or attempt.get("raw_summary_status") == "FAIL"
-        if failed and attempt["attempt_id"] not in resolved:
+        if (failed and assessed is not None and attempt["profile_id"] == assessed["profile_id"]
+                and attempt["attempt_id"] in assessed["covered_failure_attempt_ids"]):
+            attempt["resolution_status"] = "ASSESSED_FAILURE"
+            attempt["controlled_assessment_outcome"] = "REJECTED"
+        elif failed and attempt["attempt_id"] not in resolved:
             attempt["resolution_status"] = "UNRESOLVED"
             errors.append(f"unresolved failed attempt: {attempt['attempt_id']}")
         elif attempt["validation_errors"] and not attempt["in_progress"] and not failed:
@@ -627,6 +667,11 @@ def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path
         errors.append("campaign and selected attempts disagree on frozen inputs")
     if len(ppl_hashes) > 1:
         errors.append("primary profiles used different PPL datasets")
+    if assessed is not None and identity:
+        fields = {"image_id": "image_id", "source_fingerprint": "source_fingerprint",
+                  "frozen_inputs_sha256": "frozen_inputs_sha256", "normalized_flags": "normalized_flags"}
+        if any(assessed[source] != identity[target] for source, target in fields.items()):
+            errors.append("controlled assessment image/source/frozen inputs/fixed flags differ from primary profiles")
     signatures = {}
     for ident, attempt in selected.items():
         for cell_id, cell in attempt["cells"].items():
@@ -661,12 +706,48 @@ def build_report(campaign_dir: Path, schedules: list[Path], *, gpqa_result: Path
     quality, quality_errors = _quality(gpqa_result, soak_result, evidence, policy, identity or {})
     pending.extend(message for message in quality_errors if message.startswith("missing mandatory"))
     errors.extend(message for message in quality_errors if not message.startswith("missing mandatory"))
-    status = "FAIL" if errors else "IN_PROGRESS" if pending and allow_incomplete else "FAIL" if pending else "FINAL_PASS"
+    controlled_comparison = None
+    if assessed is not None:
+        baselines = [(ident, value) for ident, value in selected.items()
+                     if value["profile"]["context"] == assessed["profile"]["context"]
+                     and value["profile"]["memory"] == assessed["profile"]["memory"]
+                     and value["profile"]["chunk"] == policy["baseline_chunk"]]
+        controlled_comparison = {"profile_id": assessed["profile_id"], "reference": None, "cells": {}}
+        if len(baselines) == 1:
+            baseline_id, baseline = baselines[0]
+            controlled_comparison["reference"] = baseline_id
+            for cell_id, outcome in assessed["cells"].items():
+                current = outcome.get("performance")
+                if current is None:
+                    controlled_comparison["cells"][cell_id] = {"status": "UNAVAILABLE", "outcome": outcome["outcome"]}
+                    continue
+                before = baseline["cells"].get(cell_id)
+                if before is None or current["canonical_comparison_signature"] != before["comparison_signature"]:
+                    controlled_comparison["cells"][cell_id] = {"status": "NOT_COMPARABLE", "reason": "canonical input/shape differs from the 16K reference"}
+                    errors.append(f"controlled {cell_id}: canonical comparison inputs differ")
+                    continue
+                changes = {key: None if current["metrics"][key] is None or before["metrics"][key] in (None, 0)
+                           else (current["metrics"][key] / before["metrics"][key] - 1) * 100 for key in METRICS}
+                different = current.get("warmup_policy") != before.get("warmup_policy")
+                controlled_comparison["cells"][cell_id] = {
+                    "status": "COMPARABLE_WITH_VERIFIED_SALT_SCOPE", "change_pct": changes,
+                    "actual_payload_sha256": current["actual_payload_sha256"], "canonical_payload_sha256": current["canonical_payload_sha256"],
+                    "warmup_policy_differs": different, "candidate_outcome": "REJECTED",
+                    "caveats": ["Metrics cover this completed cell; the candidate retains terminal failures elsewhere."]
+                    + (["warmup_policy_differs"] if different else []),
+                }
+        else:
+            pending.append("controlled comparison needs one complete 16K reference with the same context and memory")
+    if assessed is None:
+        status = "FAIL" if errors else "IN_PROGRESS" if pending and allow_incomplete else "FAIL" if pending else "FINAL_PASS"
+    else:
+        status = "FAIL" if errors else "INCOMPLETE_WITH_FAILURES" if pending else "COMPLETE_WITH_FAILURES"
     return {"status": status, "raw_campaign_status": state.get("status"), "policy": policy,
             "schedule": list(schedule.values()), "primary_profile_ids": [p["id"] for p in primary],
             "controlled_chunk_profile_ids": [p["id"] for p in controlled], "attempts": attempts,
             "selected_attempts": {key: a["attempt_id"] for key, a in selected.items()},
             "reference": reference, "comparisons": comparisons, "once_only": quality,
+            "controlled_assessment": assessed, "controlled_comparison": controlled_comparison,
             "errors": errors, "pending": pending, "raw_evidence": evidence.files,
             "statistic": "Per-cell repeat-1 is the primary result for both v1 and v2. Additional legacy repetitions remain individually labelled references. Percent changes use only identical repeat-1 payload hashes, kind, actual input/output counts and concurrency, with cache=0 on every request."}
 
@@ -681,6 +762,13 @@ def markdown(report):
     for title, values in (("错误", report["errors"]), ("未完成", report["pending"])):
         if values:
             lines += ["", f"## {title}", ""] + ["- " + v for v in values]
+    if report.get("controlled_assessment") is not None:
+        controlled = report["controlled_assessment"]
+        coverage = controlled["coverage"]
+        lines += ["", "## 32K controlled assessment", "",
+                  f"候选：**{controlled['candidate_outcome']}**；覆盖 {coverage['covered']}/42，性能完成 {coverage['measured_pass']}，"
+                  f"存在终止性失败的单元 {coverage['terminal_failed']}，未覆盖 {coverage['not_run']}。",
+                  "原始失败及诊断记录保留；warmup 失败没有性能估计。"]
     def show(value):
         return "—" if value is None else f"{value:.4f}"
     for attempt in report["attempts"]:
@@ -716,12 +804,14 @@ def main():
     parser.add_argument("--gpqa-result", type=Path)
     parser.add_argument("--soak-result", type=Path)
     parser.add_argument("--resolutions", type=Path)
+    parser.add_argument("--controlled-assessment", type=Path)
     parser.add_argument("--reference")
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--output-prefix", type=Path)
     args = parser.parse_args()
     report = build_report(args.directory, args.schedule, gpqa_result=args.gpqa_result,
                           soak_result=args.soak_result, resolutions=args.resolutions,
+                          controlled_assessment=args.controlled_assessment,
                           reference=args.reference, allow_incomplete=args.allow_incomplete)
     prefix = args.output_prefix or args.directory / "comparison"
     prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -729,7 +819,7 @@ def main():
     prefix.with_suffix(".md").write_text(markdown(report))
     print(json.dumps({"status": report["status"], "attempts": len(report["attempts"]),
                       "selected_profiles": len(report["selected_attempts"]), "output": str(prefix)}))
-    return 0 if report["status"] in ("FINAL_PASS", "IN_PROGRESS") else 1
+    return 0 if report["status"] in ("FINAL_PASS", "IN_PROGRESS", "COMPLETE_WITH_FAILURES") else 1
 
 
 if __name__ == "__main__":

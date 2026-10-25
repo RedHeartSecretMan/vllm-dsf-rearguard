@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.benchmarks import profile_report as report
 
@@ -441,6 +442,136 @@ class ProfileReportTests(unittest.TestCase):
         result = self.build()
         self.assertEqual(result["status"], "FAIL")
         self.assertTrue(any("p0:" in error and "PPL windows incomplete" in error for error in result["errors"]))
+
+    def controlled_receipt_fixture(self, *, complete=True):
+        selected = copy.deepcopy(self.schedule[0])
+        selected.update(id="controlled-32k", chunk=32768, only="matrix")
+        entry = self.add_attempt(selected, state="FAIL")
+        self.schedule.append(selected)
+        self.save(self.root / "schedule.json", self.schedule)
+        self.save_state()
+        primary = report._attempt(self.root.resolve(), self.state["profiles"][0], report.Evidence(), self.policy)
+        launch = json.loads((self.root / entry["id"] / "results/launch.json").read_text())
+        key = "matrix_single/random/i8-o2-c1"
+        performance = copy.deepcopy(primary["cells"][key])
+        performance.update(canonical_comparison_signature=performance["comparison_signature"],
+                           actual_payload_sha256=digest("new-salt"),
+                           canonical_payload_sha256=performance["comparison_signature"]["rounds"][0]["payload_sha256"])
+        assessed = {
+            "schema_version": 1, "kind": "controlled_chunk_assessment", "validation_errors": [],
+            "status": "COMPLETE_WITH_FAILURES" if complete else "INCOMPLETE_WITH_FAILURES", "candidate_outcome": "REJECTED",
+            "profile_id": entry["id"], "profile": {k: entry[k] for k in ("context", "memory", "chunk")},
+            "image_id": launch["image_id"], "source_fingerprint": launch["source_manifest_sha256"],
+            "frozen_inputs_sha256": digest("inputs"), "normalized_flags": report._normalized_flags(launch["command"], launch["image_id"]),
+            "covered_failure_attempt_ids": [entry["id"]], "inputs": {"summaries": []},
+            "coverage": {"expected": 42, "covered": 42 if complete else 5, "measured_pass": 41 if complete else 4,
+                         "terminal_failed": 1, "not_run": 0 if complete else 37},
+            "cells": {key: {"outcome": "PASS", "performance": performance},
+                      "matrix_single/random/failed": {"outcome": "FAIL_TERMINAL", "performance": None}},
+        }
+        return assessed
+
+    def test_complete_controlled_rejection_is_never_final_pass(self):
+        assessed = self.controlled_receipt_fixture()
+        with patch("scripts.benchmarks.profile_controlled_report.validate_receipt", return_value=assessed):
+            result = self.build(controlled_assessment=self.root / "control.json")
+        self.assertEqual(result["status"], "COMPLETE_WITH_FAILURES", result["errors"])
+        self.assertNotIn("controlled-32k", result["selected_attempts"])
+        original = next(row for row in result["attempts"] if row["attempt_id"] == "controlled-32k")
+        self.assertEqual(original["raw_status"], "FAIL")
+        self.assertEqual(original["resolution_status"], "ASSESSED_FAILURE")
+        self.assertEqual(result["controlled_comparison"]["cells"]["matrix_single/random/failed"]["status"], "UNAVAILABLE")
+        self.assertNotIn("change_pct", result["controlled_comparison"]["cells"]["matrix_single/random/failed"])
+
+    def test_partial_controlled_rejection_keeps_37_pending(self):
+        assessed = self.controlled_receipt_fixture(complete=False)
+        with patch("scripts.benchmarks.profile_controlled_report.validate_receipt", return_value=assessed):
+            result = self.build(controlled_assessment=self.root / "control.json", allow_incomplete=True)
+        self.assertEqual(result["status"], "INCOMPLETE_WITH_FAILURES")
+        self.assertTrue(any("37 of 42" in item for item in result["pending"]))
+
+    def test_controlled_assessment_cannot_replace_32k_failure_with_16k_pass(self):
+        assessed = self.controlled_receipt_fixture()
+        source = self.root / "controlled-32k/results/summary.json"
+        path = self.root / "resolution.json"
+        self.save(path, [{"attempt_id": "controlled-32k", "reason": "16K passes", "replacement_profile_ids": ["p0"],
+                          "rawrefs": [{"path": str(source), "sha256": report._sha(source)}]}])
+        with patch("scripts.benchmarks.profile_controlled_report.validate_receipt", return_value=assessed):
+            result = self.build(controlled_assessment=self.root / "control.json", resolutions=path)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("cannot be replaced" in error for error in result["errors"]))
+
+    def test_omitted_controlled_failure_cannot_be_resolved_by_a_primary_pass(self):
+        self.controlled_receipt_fixture()
+        self.schedule = [p for p in self.schedule if p["id"] != "controlled-32k"]
+        self.save(self.root / "schedule.json", self.schedule)
+        source = self.root / "controlled-32k/results/summary.json"
+        path = self.root / "resolution.json"
+        self.save(path, [{"attempt_id": "controlled-32k", "reason": "16K passes; omit the failed candidate",
+                          "replacement_profile_ids": ["p0"],
+                          "rawrefs": [{"path": str(source), "sha256": report._sha(source)}]}])
+        result = self.build(resolutions=path)  # Deliberately no controlled-assessment parameter.
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("historical controlled profile" in e for e in result["errors"]))
+        self.assertTrue(any("controlled failures cannot be replaced" in e for e in result["errors"]))
+        original = next(a for a in result["attempts"] if a["attempt_id"] == "controlled-32k")
+        self.assertEqual((original["raw_status"], original["resolution_status"]), ("FAIL", "UNRESOLVED"))
+
+    def test_listed_controlled_failure_still_requires_assessment_without_parameter(self):
+        self.controlled_receipt_fixture()
+        source = self.root / "controlled-32k/results/summary.json"
+        path = self.root / "resolution.json"
+        self.save(path, [{"attempt_id": "controlled-32k", "reason": "Use a primary configuration instead",
+                          "replacement_profile_ids": ["p0"],
+                          "rawrefs": [{"path": str(source), "sha256": report._sha(source)}]}])
+        result = self.build(resolutions=path)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("independent controlled assessment" in e for e in result["errors"]))
+
+    def test_even_passed_historical_controlled_profile_must_remain_in_schedule(self):
+        profile = {**self.schedule[0], "id": "controlled-completed", "chunk": 32768, "only": "matrix"}
+        self.add_attempt(profile)
+        self.save_state()
+        result = self.build()
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("historical controlled profile" in e for e in result["errors"]))
+
+    def test_primary_semantic_failure_can_still_reference_a_validated_same_profile_retry(self):
+        self.add_attempt(self.schedule[0], attempt_id="p0-highres-failed", state="FAIL")
+        failed = self.state["profiles"].pop()
+        self.state["profiles"].insert(0, failed)
+        self.save_state()
+        source = self.root / "p0-highres-failed/results/summary.json"
+        path = self.root / "resolution.json"
+        self.save(path, [{"attempt_id": "p0-highres-failed",
+                          "reason": "Original semantic failure retained; validated same-profile retry passed.",
+                          "replacement_profile_ids": ["p0"],
+                          "rawrefs": [{"path": str(source), "sha256": report._sha(source)}]}])
+        result = self.build(resolutions=path)
+        self.assertEqual(result["status"], "FINAL_PASS", result["errors"])
+        original = next(a for a in result["attempts"] if a["attempt_id"] == "p0-highres-failed")
+        self.assertEqual((original["raw_status"], original["resolution_status"]), ("FAIL", "RESOLVED"))
+
+    def test_complete_controlled_assessment_still_requires_primary_and_once_quality(self):
+        assessed = self.controlled_receipt_fixture()
+        with patch("scripts.benchmarks.profile_controlled_report.validate_receipt", return_value=assessed):
+            result = report.build_report(self.root, [self.root / "schedule.json"], policy=self.policy,
+                                         controlled_assessment=self.root / "control.json", soak_result=self.soak)
+        self.assertEqual(result["status"], "INCOMPLETE_WITH_FAILURES")
+        self.assertTrue(any("gpqa" in item for item in result["pending"]))
+        self.mutate_summary("p0", lambda value: value["cells"].pop(1))
+        with patch("scripts.benchmarks.profile_controlled_report.validate_receipt", return_value=assessed):
+            self.assertEqual(self.build(controlled_assessment=self.root / "control.json")["status"], "FAIL")
+
+    def test_unvalidated_decision_reject_does_not_change_original_failure(self):
+        self.controlled_receipt_fixture()
+        path = self.root / "control.json"
+        self.save(path, {"schema_version": 1, "kind": "controlled_chunk_assessment", "decision": "reject",
+                         "status": "COMPLETE_WITH_FAILURES", "coverage": {"expected": 42, "not_run": 0}})
+        result = self.build(controlled_assessment=path)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(any("invalid controlled" in error for error in result["errors"]))
+        self.assertEqual(self.build()["status"], "FAIL")  # No new parameter preserves the old contract.
 
 
 if __name__ == "__main__":

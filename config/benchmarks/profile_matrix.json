@@ -17,7 +17,7 @@
   "source_catalogs": ["regular", "long_tail", "core", "visual", "responses", "quality"],
   "test_port": 6688,
   "contexts": [1048576, 524288, 262144],
-  "memory_utilizations": [0.90, 0.93, 0.96],
+  "memory_utilizations": [0.90, 0.925, 0.95],
   "chunk_candidates": [16384, 32768],
   "baseline_chunk": 16384,
   "fixed_launch": ["--parallel", "tp4dp2", "--dspark", "5", "--max-seqs", "256", "--experimental", "stacked-kv", "--experimental", "bounded-prefill", "--no-disable-chunked-mm-input", "--responses-store", "--port", "6688"],
