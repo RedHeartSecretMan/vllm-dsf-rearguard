@@ -44,7 +44,9 @@ from openai.types.responses import (
     ResponseInProgressEvent as OpenAIResponseInProgressEvent,
 )
 from openai.types.responses.response import IncompleteDetails, ToolChoice
-from openai.types.responses.response_input_content_param import ResponseInputContentParam
+from openai.types.responses.response_input_content_param import (
+    ResponseInputContentParam,
+)
 from openai.types.responses.response_reasoning_item import (
     Content as ResponseReasoningTextContent,
 )
@@ -58,7 +60,6 @@ from pydantic import (
     field_serializer,
     model_validator,
 )
-
 from vllm.config import ModelConfig
 from vllm.entrypoints.chat_utils import (
     ChatCompletionMessageParam,
@@ -870,6 +871,14 @@ class ResponsesResponse(OpenAIBaseModel):
             kv_transfer_params=kv_transfer_params,
             ec_transfer_params=ec_transfer_params,
         )
+
+
+class ResponseDeleted(OpenAIBaseModel):
+    """OpenAI Responses API deletion result."""
+
+    id: str
+    object: Literal["response.deleted"] = "response.deleted"
+    deleted: Literal[True] = True
 
 
 # TODO: this code can be removed once

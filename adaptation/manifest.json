@@ -45,13 +45,13 @@
     {
       "path": "vllm/entrypoints/openai/responses/protocol.py",
       "base_sha256": "95608b698c923f92e8494a98d4db92ca1fdbdde11b4aad4181c8e6eabb36585e",
-      "patched_sha256": "2ebe57b9825bc29748b5063e566adebcd60e472fd0d1fed19b0b9e19de41b8d5",
+      "patched_sha256": "83ad77f8a27a0bdaddec0d125b17c866827a42801b75daa16f34fec3dc5cd12a",
       "stage": "base_integration"
     },
     {
       "path": "vllm/entrypoints/openai/responses/serving.py",
       "base_sha256": "dc720ca7038f73581f5576b0c5c56e086167fea3323f29f2d76bbacdb5b5b6db",
-      "patched_sha256": "b311af39219913c88f11884b8d84cd02f074ca37d3675bb55da9932392f4351e",
+      "patched_sha256": "949a5339d12c2bfad1ced917fa8f8b185db476ced7f2d0a34ab9051379139ae9",
       "stage": "base_integration"
     },
     {

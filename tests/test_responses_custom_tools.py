@@ -215,6 +215,7 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
 
     def test_stream_completed_and_stored_history_reuse_emitted_items(self):
         import asyncio
+        from collections import OrderedDict
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
 
@@ -258,8 +259,12 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
             server.enable_log_outputs = with_logging
             server.request_logger = Mock() if with_logging else None
             server._initialize_tool_sessions = AsyncMock()
-            server.response_store = {}
+            server.response_store = OrderedDict()
             server.response_store_lock = asyncio.Lock()
+            server.store_max_size = 10_000
+            server.msg_store = OrderedDict()
+            server.event_store = OrderedDict()
+            server.background_tasks = {}
             server._make_response_output_items = Mock(side_effect=AssertionError("stream must not reparse"))
             expected_logprobs = [{
                 "token": text[index:index + 3], "logprob": -0.25, "bytes": list(text[index:index + 3].encode()),
@@ -337,6 +342,85 @@ class ResponsesCustomToolHistoryTest(unittest.TestCase):
         following = processor.close_current()
         self.assertEqual(following[0].logprobs, [])
         self.assertIsNone(following[2].item.content[0].logprobs)
+
+    def test_responses_store_eviction_releases_all_state(self):
+        import asyncio
+        from collections import OrderedDict, deque
+
+        from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
+
+        server = object.__new__(OpenAIServingResponses)
+        server.store_max_size = 1
+        server.response_store = OrderedDict(
+            [("resp_old", object()), ("resp_new", object())]
+        )
+        server.msg_store = OrderedDict(
+            [("resp_old", object()), ("resp_new", object())]
+        )
+        server.event_store = OrderedDict(
+            [
+                ("resp_old", (deque([object()]), asyncio.Event())),
+                ("resp_new", (deque([object()]), asyncio.Event())),
+            ]
+        )
+        server.background_tasks = {}
+
+        server._evict_response_store_locked()
+
+        self.assertNotIn("resp_old", server.response_store)
+        self.assertNotIn("resp_old", server.msg_store)
+        self.assertNotIn("resp_old", server.event_store)
+        self.assertIn("resp_new", server.response_store)
+
+    def test_delete_responses_releases_response_message_and_event_state(self):
+        import asyncio
+        from collections import OrderedDict, deque
+
+        from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
+
+        server = object.__new__(OpenAIServingResponses)
+        server.response_store = OrderedDict([("resp_1", object())])
+        server.msg_store = OrderedDict([("resp_1", object())])
+        server.event_store = OrderedDict(
+            [("resp_1", (deque([object()]), asyncio.Event()))]
+        )
+        server.background_tasks = {}
+        server.response_store_lock = asyncio.Lock()
+
+        deleted = asyncio.run(server.delete_responses("resp_1"))
+        self.assertEqual(
+            deleted.model_dump(),
+            {"id": "resp_1", "object": "response.deleted", "deleted": True},
+        )
+        self.assertNotIn("resp_1", server.response_store)
+        self.assertNotIn("resp_1", server.msg_store)
+        self.assertNotIn("resp_1", server.event_store)
+
+        missing = asyncio.run(server.delete_responses("resp_1"))
+        self.assertIn("not found", missing.error.message)
+
+    def test_background_stream_removes_terminal_event_queue(self):
+        import asyncio
+        from collections import OrderedDict
+        from types import SimpleNamespace
+
+        from vllm.entrypoints.openai.responses.serving import OpenAIServingResponses
+
+        server = object.__new__(OpenAIServingResponses)
+        server.event_store = OrderedDict()
+        server.response_store_lock = asyncio.Lock()
+
+        async def completed_events(*_args, **_kwargs):
+            yield SimpleNamespace(type="response.completed")
+
+        server.responses_stream_generator = completed_events
+        asyncio.run(
+            server._run_background_request_stream(
+                SimpleNamespace(request_id="resp_1")
+            )
+        )
+
+        self.assertNotIn("resp_1", server.event_store)
 
     def test_serving_logprob_builders_preserve_bytes_across_sdk_models(self):
         from types import SimpleNamespace

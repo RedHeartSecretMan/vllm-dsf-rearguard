@@ -2,8 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import asyncio
+import os
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from http import HTTPStatus
@@ -19,7 +20,6 @@ from openai.types.responses import (
 )
 from openai.types.responses.response_output_text import Logprob, LogprobTopLogprob
 from pydantic import TypeAdapter
-
 from vllm import envs
 from vllm.config.utils import replace
 from vllm.engine.protocol import EngineClient
@@ -45,6 +45,7 @@ from vllm.entrypoints.openai.responses.protocol import (
     OutputTokensDetails,
     ResponseCompletedEvent,
     ResponseCreatedEvent,
+    ResponseDeleted,
     ResponseInProgressEvent,
     ResponseInputOutputItem,
     ResponseInputOutputMessage,
@@ -90,6 +91,9 @@ from vllm.utils import random_uuid
 from vllm.utils.collection_utils import as_list
 
 logger = init_logger(__name__)
+
+_RESPONSES_STORE_MAX_SIZE_ENV = "VLLM_RESPONSES_API_STORE_MAX_SIZE"
+_DEFAULT_RESPONSES_STORE_MAX_SIZE = 10_000
 
 
 class OpenAIServingResponses(GenerateBaseServing):
@@ -151,11 +155,30 @@ class OpenAIServingResponses(GenerateBaseServing):
         # behavior in OpenAI's Responses API is to store the response, but
         # vLLM's default behavior is not.
         self.enable_store = envs.VLLM_ENABLE_RESPONSES_API_STORE
+        try:
+            self.store_max_size = max(
+                1,
+                int(
+                    os.getenv(
+                        _RESPONSES_STORE_MAX_SIZE_ENV,
+                        str(_DEFAULT_RESPONSES_STORE_MAX_SIZE),
+                    )
+                ),
+            )
+        except ValueError:
+            self.store_max_size = _DEFAULT_RESPONSES_STORE_MAX_SIZE
+            logger.warning(
+                "Ignoring invalid %s; using the default limit of %d.",
+                _RESPONSES_STORE_MAX_SIZE_ENV,
+                _DEFAULT_RESPONSES_STORE_MAX_SIZE,
+            )
         if self.enable_store:
             logger.warning_once(
                 "`VLLM_ENABLE_RESPONSES_API_STORE` is enabled. This may "
-                "cause a memory leak since we never remove responses from "
-                "the store."
+                "retain up to %d responses in the in-memory store. Set %s "
+                "to tune the bound.",
+                self.store_max_size,
+                _RESPONSES_STORE_MAX_SIZE_ENV,
             )
 
         self.use_harmony = self.model_config.hf_config.model_type == "gpt_oss"
@@ -165,27 +188,92 @@ class OpenAIServingResponses(GenerateBaseServing):
                 "and always enable tool use."
             )
         self.enable_auto_tools = enable_auto_tools
-        # HACK(woosuk): This is a hack. We should use a better store.
-        # FIXME: If enable_store=True, this may cause a memory leak since we
-        # never remove responses from the store.
-        self.response_store: dict[str, ResponsesResponse] = {}
+        # Keep the default in-memory store bounded until a pluggable store is
+        # used. The response ID is also the key used by the message/event
+        # stores, so eviction can release all state for one response together.
+        self.response_store: OrderedDict[str, ResponsesResponse] = OrderedDict()
         self.response_store_lock = asyncio.Lock()
 
-        # HACK(woosuk): This is a hack. We should use a better store.
-        # FIXME: If enable_store=True, this may cause a memory leak since we
-        # never remove messages from the store.
-        self.msg_store: dict[str, ResponsesPreviousMessages] = {}
+        self.msg_store: OrderedDict[str, ResponsesPreviousMessages] = OrderedDict()
 
-        # HACK(wuhang): This is a hack. We should use a better store.
-        # FIXME: If enable_store=True, this may cause a memory leak since we
-        # never remove events from the store.
-        self.event_store: dict[
+        self.event_store: OrderedDict[
             str, tuple[deque[StreamingResponsesResponse], asyncio.Event]
-        ] = {}
+        ] = OrderedDict()
 
         self.background_tasks: dict[str, asyncio.Task] = {}
 
         self.tool_server = tool_server
+
+    def _release_response_state_locked(
+        self,
+        response_id: str,
+        *,
+        cancel_task: bool = False,
+    ) -> asyncio.Task | None:
+        """Release all process-local state associated with one response.
+
+        The caller must hold ``response_store_lock``. Cancelling is deferred
+        until after the lock is released by the caller; the task's ``finally``
+        block may need to acquire this same lock to remove its event queue.
+        """
+        self.response_store.pop(response_id, None)
+        self.msg_store.pop(response_id, None)
+        self.event_store.pop(response_id, None)
+        if cancel_task:
+            return self.background_tasks.pop(response_id, None)
+        return None
+
+    def _evict_response_store_locked(self) -> list[asyncio.Task]:
+        """Evict least-recently-used responses and return tasks to cancel."""
+        tasks: list[asyncio.Task] = []
+        while len(self.response_store) > self.store_max_size:
+            response_id = next(iter(self.response_store))
+            task = self._release_response_state_locked(
+                response_id,
+                cancel_task=True,
+            )
+            if task is not None:
+                tasks.append(task)
+            logger.debug("Evicted response %s from the Responses store", response_id)
+        return tasks
+
+    def _evict_message_store_locked(self) -> list[asyncio.Task]:
+        """Bound messages that belong to failed or in-flight requests too."""
+        tasks: list[asyncio.Task] = []
+        while len(self.msg_store) > self.store_max_size:
+            response_id = next(iter(self.msg_store))
+            task = self._release_response_state_locked(
+                response_id,
+                cancel_task=True,
+            )
+            if task is not None:
+                tasks.append(task)
+            logger.debug(
+                "Evicted response messages %s from the Responses store", response_id
+            )
+        return tasks
+
+    async def _store_response(
+        self,
+        response: ResponsesResponse,
+        *,
+        preserve_cancelled: bool = False,
+    ) -> None:
+        tasks: list[asyncio.Task]
+        async with self.response_store_lock:
+            if (
+                preserve_cancelled
+                and (stored_response := self.response_store.get(response.id))
+                is not None
+                and stored_response.status == "cancelled"
+            ):
+                return
+            self.response_store[response.id] = response
+            self.response_store.move_to_end(response.id)
+            tasks = self._evict_response_store_locked()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
 
     def _effective_chat_template_kwargs(
         self, request: ResponsesRequest
@@ -280,11 +368,10 @@ class OpenAIServingResponses(GenerateBaseServing):
         previous_messages: ResponsesPreviousMessages | None = None
         previous_response_outputs: list[ResponseOutputItem] | None = None
         if prev_response is not None:
-            stored_messages = (
-                self.msg_store[prev_response.id]
-                if self.use_harmony
-                else self.msg_store.get(prev_response.id)
-            )
+            async with self.response_store_lock:
+                stored_messages = self.msg_store.get(prev_response.id)
+                if stored_messages is not None:
+                    self.msg_store.move_to_end(prev_response.id)
             if stored_messages is not None:
                 previous_messages = stored_messages.copy()
             previous_response_outputs = list(prev_response.output)
@@ -341,6 +428,8 @@ class OpenAIServingResponses(GenerateBaseServing):
         if prev_response_id is not None:
             async with self.response_store_lock:
                 prev_response = self.response_store.get(prev_response_id)
+                if prev_response is not None:
+                    self.response_store.move_to_end(prev_response_id)
             if prev_response is None:
                 return self._make_not_found_error(prev_response_id)
         else:
@@ -503,7 +592,14 @@ class OpenAIServingResponses(GenerateBaseServing):
 
         # Store the input messages.
         if request.store:
-            self.msg_store[request.request_id] = messages
+            tasks: list[asyncio.Task]
+            async with self.response_store_lock:
+                self.msg_store[request.request_id] = messages
+                self.msg_store.move_to_end(request.request_id)
+                tasks = self._evict_message_store_locked()
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
 
         if request.background:
             created_time = int(time.time())
@@ -516,8 +612,7 @@ class OpenAIServingResponses(GenerateBaseServing):
                 status="queued",
                 usage=None,
             )
-            async with self.response_store_lock:
-                self.response_store[response.id] = response
+            await self._store_response(response)
 
             # Run the request in the background.
             if request.stream:
@@ -876,11 +971,7 @@ class OpenAIServingResponses(GenerateBaseServing):
         )
 
         if request.store:
-            async with self.response_store_lock:
-                stored_response = self.response_store.get(response.id)
-                # If the response is already cancelled, don't update it.
-                if stored_response is None or stored_response.status != "cancelled":
-                    self.response_store[response.id] = response
+            await self._store_response(response, preserve_cancelled=True)
         return response
 
     def _topk_logprobs(
@@ -1055,7 +1146,9 @@ class OpenAIServingResponses(GenerateBaseServing):
     ):
         event_deque: deque[StreamingResponsesResponse] = deque()
         new_event_signal = asyncio.Event()
-        self.event_store[request.request_id] = (event_deque, new_event_signal)
+        async with self.response_store_lock:
+            self.event_store[request.request_id] = (event_deque, new_event_signal)
+            self.event_store.move_to_end(request.request_id)
         generator = self.responses_stream_generator(request, *args, **kwargs)
         try:
             async for event in generator:
@@ -1063,6 +1156,10 @@ class OpenAIServingResponses(GenerateBaseServing):
                 new_event_signal.set()  # Signal new event available
         finally:
             new_event_signal.set()
+            async with self.response_store_lock:
+                stored_events = self.event_store.get(request.request_id)
+                if stored_events is not None and stored_events[0] is event_deque:
+                    self.event_store.pop(request.request_id, None)
 
     async def _run_background_request(
         self,
@@ -1077,8 +1174,10 @@ class OpenAIServingResponses(GenerateBaseServing):
             response_id = request.request_id
             async with self.response_store_lock:
                 stored_response = self.response_store.get(response_id)
-                assert stored_response is not None
-                if stored_response.status not in ("completed", "cancelled"):
+                if stored_response is not None and stored_response.status not in (
+                    "completed",
+                    "cancelled",
+                ):
                     stored_response.status = "failed"
 
     async def responses_background_stream_generator(
@@ -1086,14 +1185,18 @@ class OpenAIServingResponses(GenerateBaseServing):
         response_id: str,
         starting_after: int | None = None,
     ) -> AsyncGenerator[StreamingResponsesResponse, None]:
-        if response_id not in self.event_store:
+        async with self.response_store_lock:
+            event_state = self.event_store.get(response_id)
+            if event_state is not None:
+                self.event_store.move_to_end(response_id)
+        if event_state is None:
             raise VLLMValidationError(
                 f"Unknown response_id: {response_id}",
                 parameter="response_id",
                 value=response_id,
             )
 
-        event_deque, new_event_signal = self.event_store[response_id]
+        event_deque, new_event_signal = event_state
         start_index = 0 if starting_after is None else starting_after + 1
         current_index = start_index
 
@@ -1122,6 +1225,8 @@ class OpenAIServingResponses(GenerateBaseServing):
     ):
         async with self.response_store_lock:
             response = self.response_store.get(response_id)
+            if response is not None:
+                self.response_store.move_to_end(response_id)
 
         if response is None:
             return self._make_not_found_error(response_id)
@@ -1161,6 +1266,27 @@ class OpenAIServingResponses(GenerateBaseServing):
             except asyncio.CancelledError:
                 logger.exception("Background task for %s was cancelled", response_id)
         return response
+
+    async def delete_responses(
+        self,
+        response_id: str,
+    ) -> ErrorResponse | ResponseDeleted:
+        """Delete one stored response and all associated process-local state."""
+        async with self.response_store_lock:
+            if response_id not in self.response_store:
+                return self._make_not_found_error(response_id)
+            task = self._release_response_state_locked(
+                response_id,
+                cancel_task=True,
+            )
+
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        return ResponseDeleted(id=response_id)
 
     def _make_not_found_error(self, response_id: str) -> ErrorResponse:
         return self.create_error_response(
