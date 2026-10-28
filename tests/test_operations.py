@@ -61,7 +61,7 @@ class SourcePayloadTests(unittest.TestCase):
         self.assertEqual(
             stages,
             {
-                "base_integration": 29,
+                "base_integration": 31,
                 "model_support": 10,
                 "sm80_acceleration": 4,
             },
@@ -169,6 +169,12 @@ class LaunchTests(unittest.TestCase):
             self.assertIn("127.0.0.1:6789:8000", command)
         self.assertEqual(DEFAULT_BASE_URL, "http://127.0.0.1:6789")
         self.assertIn("127.0.0.1:8005:8000", self.plan("--port", "8005")["command"])
+
+    def test_launch_enables_graph_memory_profiling_for_its_fixed_runtime(self):
+        for options in ((), ("--parallel", "tp8"), ("--dspark", "0"), ("--eager",)):
+            with self.subTest(options=options):
+                command = self.plan(*options)["command"]
+                self.assertIn("VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1", command)
 
     def test_multimodal_plan_uses_deployment_limits(self):
         command = self.plan()["command"]

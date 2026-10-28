@@ -1,0 +1,359 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "vllm-dsf-rearguard: verify, build and serve",
+    "locale": "en",
+    "output": "docs/architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:RedHeartSecretMan/deepseek-v4.1-flash-a100.git",
+      "link_mode": "local-only",
+      "revision": "cff23769160f4e27b206603ca42fb34c871f0ff9"
+    }
+  },
+  "components": [
+    {
+      "id": "weights",
+      "type": "database",
+      "label": "Model weights",
+      "sublabel": "pinned ModelScope revision",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "manifests/model-files.json",
+          "line": 1,
+          "end_line": 6
+        }
+      ]
+    },
+    {
+      "id": "modelcheck",
+      "type": "backend",
+      "label": "model_check.py",
+      "sublabel": "full SHA256 audit",
+      "pos": [
+        290,
+        40
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "scripts/model_check.py",
+          "line": 32,
+          "end_line": 73
+        }
+      ]
+    },
+    {
+      "id": "receipt",
+      "type": "database",
+      "label": "Model receipt",
+      "sublabel": "model-verified.json",
+      "pos": [
+        540,
+        40
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "scripts/model_check.py",
+          "line": 108,
+          "end_line": 120
+        }
+      ]
+    },
+    {
+      "id": "client",
+      "type": "external",
+      "label": "OpenAI client",
+      "sublabel": "Chat / Responses",
+      "pos": [
+        790,
+        40
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "scripts/bench_common.py",
+          "line": 32,
+          "end_line": 32
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "build.sh",
+      "sublabel": "committed sources only",
+      "pos": [
+        40,
+        250
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "scripts/build.sh",
+          "line": 10,
+          "end_line": 31
+        }
+      ]
+    },
+    {
+      "id": "image",
+      "type": "cloud",
+      "label": "Runtime image",
+      "sublabel": "pinned vLLM + overlay",
+      "pos": [
+        290,
+        250
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "Dockerfile",
+          "line": 1,
+          "end_line": 18
+        },
+        {
+          "path": "adaptation/install.py",
+          "line": 16,
+          "end_line": 43
+        }
+      ]
+    },
+    {
+      "id": "launch",
+      "type": "security",
+      "label": "launch.py --start",
+      "sublabel": "plan, verify, run",
+      "pos": [
+        540,
+        250
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "launch.py",
+          "line": 363,
+          "end_line": 405
+        },
+        {
+          "path": "launch.py",
+          "line": 289,
+          "end_line": 300
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "vLLM API server",
+      "sublabel": "127.0.0.1:6789 /v1",
+      "pos": [
+        790,
+        250
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "launch.py",
+          "line": 140,
+          "end_line": 148
+        },
+        {
+          "path": "launch.py",
+          "line": 251,
+          "end_line": 256
+        }
+      ]
+    },
+    {
+      "id": "dp0",
+      "type": "backend",
+      "label": "DP rank 0",
+      "sublabel": "TP4 on 4×A100",
+      "pos": [
+        1040,
+        180
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "launch.py",
+          "line": 104,
+          "end_line": 107
+        },
+        {
+          "path": "launch.py",
+          "line": 149,
+          "end_line": 157
+        }
+      ]
+    },
+    {
+      "id": "dp1",
+      "type": "backend",
+      "label": "DP rank 1",
+      "sublabel": "TP4 on 4×A100",
+      "pos": [
+        1040,
+        320
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "sources": [
+        {
+          "path": "launch.py",
+          "line": 104,
+          "end_line": 107
+        },
+        {
+          "path": "launch.py",
+          "line": 149,
+          "end_line": 157
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Docker container · 8×A100-SXM4-80GB",
+      "wraps": [
+        "api",
+        "dp0",
+        "dp1"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "hash-weights",
+      "from": "weights",
+      "to": "modelcheck",
+      "label": "read, hash"
+    },
+    {
+      "id": "write-receipt",
+      "from": "modelcheck",
+      "to": "receipt",
+      "label": "write"
+    },
+    {
+      "id": "require-receipt",
+      "from": "receipt",
+      "to": "launch",
+      "label": "re-verify",
+      "variant": "security"
+    },
+    {
+      "id": "build-image",
+      "from": "build",
+      "to": "image",
+      "label": "build"
+    },
+    {
+      "id": "check-image",
+      "from": "launch",
+      "to": "image",
+      "label": "check image",
+      "variant": "security"
+    },
+    {
+      "id": "docker-run",
+      "from": "launch",
+      "to": "api",
+      "label": "docker run",
+      "variant": "emphasis"
+    },
+    {
+      "id": "client-request",
+      "from": "client",
+      "to": "api",
+      "label": "HTTP /v1",
+      "variant": "emphasis"
+    },
+    {
+      "id": "to-dp0",
+      "from": "api",
+      "to": "dp0",
+      "label": "requests"
+    },
+    {
+      "id": "to-dp1",
+      "from": "api",
+      "to": "dp1",
+      "label": "requests"
+    },
+    {
+      "id": "ep8",
+      "from": "dp0",
+      "to": "dp1",
+      "label": "EP8 experts"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Launch gates",
+      "items": [
+        "config.json matches the pinned 1017 release",
+        "Image sources match this checkout",
+        "Every weight file matches its SHA256 receipt",
+        "Eight idle A100-SXM4-80GB GPUs"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Serving",
+      "items": [
+        "TP4 / DP2 / EP8 by default, TP8 / EP8 optional",
+        "FP8 DS MLA KV cache, prefix caching, DSpark k5",
+        "Weights mounted read-only into the container"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Build",
+      "items": [
+        "git archive of HEAD; dirty trees are refused",
+        "Base vLLM image pinned by digest",
+        "Overlay installed atomically from a hashed manifest"
+      ]
+    }
+  ]
+}

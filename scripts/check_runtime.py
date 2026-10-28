@@ -33,7 +33,7 @@ def require_matching_report(report, root):
 
 
 def main():
-    root = Path("/opt/dsv41-a100")
+    root = Path("/opt/vllm-dsf-rearguard")
     site = Path(sysconfig.get_paths()["purelib"])
     expected = expected_sources(root)
     for name, digest in expected.items():

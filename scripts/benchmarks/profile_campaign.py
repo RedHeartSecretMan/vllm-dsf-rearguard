@@ -34,7 +34,7 @@ def inspect(name: str) -> dict[str, Any]:
 
 def stop(name: str) -> None:
     state = inspect(name)
-    if state["Config"]["Labels"].get("dsv41-a100.owner") != "deepseek-v4.1-flash-a100":
+    if state["Config"]["Labels"].get("vllm-dsf-rearguard.owner") != "vllm-dsf-rearguard":
         raise ValueError("refusing to stop a container outside this project")
     if state["State"]["Running"]:
         result = subprocess.run(["docker", "stop", "-t", "60", name], capture_output=True, text=True)

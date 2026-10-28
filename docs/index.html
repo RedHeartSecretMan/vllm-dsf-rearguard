@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1430">
+  <title>vllm-dsf-rearguard</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #070b16; color: #e6edf3; }
+    body { max-width: 960px; margin: 0 auto; padding: 56px 24px 72px; }
+    .hero { display: flex; gap: 24px; align-items: center; margin-bottom: 48px; }
+    .hero img { width: 96px; height: 96px; border-radius: 22px; }
+    h1 { margin: 0 0 8px; font-size: clamp(2rem, 6vw, 3.7rem); letter-spacing: -.06em; }
+    .tagline { margin: 0; color: #94a3b8; font-size: 1.1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+    a.card { display: block; padding: 22px; border: 1px solid #263354; border-radius: 16px; background: #0e162c; color: inherit; text-decoration: none; transition: border-color .2s, transform .2s; }
+    a.card:hover { border-color: #fbbf24; transform: translateY(-2px); }
+    h2 { margin: 0 0 8px; font-size: 1.1rem; color: #fbbf24; }
+    p { margin: 0; line-height: 1.6; color: #a9b8cf; }
+    footer { margin-top: 48px; color: #64748b; font-size: .9rem; }
+    footer a { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <img src="assets/logo_square.png" alt="vllm-dsf-rearguard">
+    <div>
+      <h1>vllm-dsf-rearguard</h1>
+      <p class="tagline">The main line moves on. A100 holds the line.</p>
+    </div>
+  </header>
+  <main class="grid">
+    <a class="card" href="architecture.html"><h2>Interactive architecture</h2><p>Explore verification, build, launch and the TP4 / DP2 / EP8 serving topology.</p></a>
+    <a class="card" href="showcase/rainy-konbini-dsh.html"><h2>Rainy konbini · dsh</h2><p>Drag to orbit, scroll to zoom and right-drag to pan around the one-pass scene.</p></a>
+    <a class="card" href="showcase/rainy-konbini-codex.html"><h2>Rainy konbini · Codex</h2><p>Explore the five-iteration version of the same rainy-night miniature scene.</p></a>
+    <a class="card" href="https://github.com/RedHeartSecretMan/vllm-dsf-rearguard"><h2>Source and documentation</h2><p>Read the README, performance results, validation data and release notes.</p></a>
+  </main>
+  <footer>DeepSeek-V4.1-Flash on 8× A100-SXM4-80GB · <a href="https://github.com/RedHeartSecretMan/vllm-dsf-rearguard/releases/tag/v0.1.0">v0.1.0</a></footer>
+</body>
+</html>

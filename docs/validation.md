@@ -1,96 +1,77 @@
-# 验证记录
+# 验证结果
 
-本文记录适配层已完成的功能、协议与精度验证，性能数据见 [基准结果](benchmarks.md)。
+本文汇总功能、协议、多模态、精度、资源边界、持续负载和构建校验的结果。性能数据和测试方法见[性能与调优](performance.md)。
 
-2026-10-24 完成的视觉与 Responses 正式 GPU 验收见 [验收报告](gpu-acceptance.md)，包含运行配置、修复内容、逐项结果和回执哈希。
+## 功能与协议
+
+| 测试项 | 覆盖范围 | 结果 |
+|---|---|---|
+| 编码器一致性 | 官方 5 组输入文件、40 种思考模式与 `reasoning_effort` 组合 | 编码输出与官方编码器逐字一致 |
+| 消息与工具续轮 | `reasoning_content`、反序工具结果、图片顺序、跨角色消息边界、同步与异步渲染 | 通过 |
+| 核心 GPU 接口 | 思考开关、工具调用、反序工具结果和图像顺序 | 8 项通过 |
+| 视觉 GPU 接口 | 单图、多图、64 图顺序、长短视频、双视频、图文混排、视频历史引用、视频分块对照 | 10 项通过 |
+| Responses GPU 接口 | 基础请求、custom-tool 历史与流式事件、custom/function 工具三轮续接、multipart/refusal 历史、图像与视频混排 | 7 项通过 |
+| 附加接口检查 | 视频时间定位、65 图与 3 视频超限拒绝、4 种视觉请求并发、流式 logprobs 与存储结果一致性 | 8 项通过 |
+| 媒体与调度结构 | 实际采样、预处理、逐帧时间映射、视觉 span、缓存与分块边界 | 107 项通过 |
+| 分布式与投机解码 | `TP8 / EP8`、`TP4 / DP2 / EP8`、DSpark k5、CUDA Graph、FP8 DS MLA KV cache、EPLB 与 EP8 通信 | 启动及文本、工具、图文检查通过 |
+
+视觉检查还覆盖缓存图片、重复图片和 1,024 token 视觉预算用例。协议回归在固定镜像中加载实际 tokenizer，171 项全部通过。GPU 接口、媒体结构和协议回归的逐项结果见 [gpu-acceptance.json](evidence/gpu-acceptance.json)。
+
+### 视频与分块
+
+测试配置允许每请求 64 张图片和 2 个视频，每个视频最多采样 32 帧。96 秒、10 FPS 的合成视频实际采样 32 帧，覆盖 0.0–95.9 秒；每帧视觉 span 为 184 token，合计 5,888 token。
+
+分块验证把调度预算设为 1,024 token，并发送实际输入为 6,329 token、缓存 token 为 0 的视频请求，确保请求必须跨多个调度窗口处理。它与关闭分块的 32K 配置使用相同请求，并返回相同的数字与颜色序列。结构检查确认单张图片的 span 保持完整，视频只在完整帧之间分块。
+
+时间定位用例正确返回最接近 70 秒的采样帧（序号 24，从 0 开始）：71.1 秒、数字 3、蓝色背景。视频续轮保留原媒体输入，并通过稳定的 `video_id` 继续引用。高分辨率视频用例的输入为 28,340 token，其中视觉 token 为 27,904；请求为冷 KV，输出与期望一致。
+
+## 长输入与资源边界
+
+| 测试项 | 条件 | 结果 |
+|---|---|---|
+| 配置矩阵 | 262K / 524K / 1M 上下文 × `0.90 / 0.925 / 0.95` 水位，16K chunk | 9 组配置的 723 个适用测试项全部通过 |
+| 16K / 32K chunk 对照 | 1M 上下文、`0.90` 水位，42 个对应负载 | 32K 完成 40 项正式测量；random、nature 的 1,047,000 token 输入未完成预热 |
+| 32K 长输入 | 1M 上下文、`0.95` 水位、32K chunk | 5 项测试、8 个请求全部通过，每个实际输入均为 1,047,000 token |
+| 高水位功能与精度 | 1M 上下文、`0.96` 水位、16K chunk | 核心接口 13 项、视觉接口 9 项、Responses 接口 7 项和 134 个 PPL 窗口全部通过 |
+| 长请求容量 | 1M 上下文、三档水位，ISL 1,047,000 / OSL 1,000，C4 与 C16 | 请求全部完成，超出即时容量的请求排队等待，未产生请求错误 |
+
+完整资源预算下，1M / 32K 的 `0.90` 和 `0.925` 水位不能满足长输入容量要求，启动检查会拒绝该配置；32K 长输入验证因此使用 `0.95` 水位。该验证记录 8 行可恢复 allocator 告警，无致命错误；1M / 16K / `0.96` 的功能与精度验证未出现 allocator 告警或致命错误。两项验证的抢占和请求错误计数增量均为零。
+
+32K 长输入和高水位功能验证用于确认资源边界，性能比较以[性能与调优](performance.md)中的配置矩阵为准。高水位功能验证中的最长大海捞针目标为 1,047,000 token，消息编码后的实际输入为 959,780 token；1,047,000 token 实际输入由 32K 长输入验证覆盖。
+
+## 精度
+
+### 全模型 PPL
+
+wikitext-2 test 每组使用相同的 134 个窗口和 272,802 个计分 token，按 2,048 token 非重叠窗口、`echo`、`top_k=1`、`seed=1017` 打分，每窗首 token 不计分。配置矩阵的 token PPL 为 **2.770433–2.774319**；1M / 16K / `0.96` 高水位验证为 **2.774212**。
+
+单独的全模型质量基线使用同一数据集和窗口，token PPL 为 2.772，落在配置矩阵的范围内；word PPL 为 3.168，byte PPL 为 1.2405。
+
+### GPQA Diamond
+
+完整 198 题完成 4 轮独立评测，条件为 `eval_batch_size=32`、`temperature=0`、`top_p=0.95`、`max_tokens=65536`、`reasoning_effort=max`。每轮 198 题均完成评分，请求失败率均为 0。
+
+| 轮次 | 准确率 |
+|---|---:|
+| 1 | 92.42% |
+| 2 | 90.40% |
+| 3 | 92.93% |
+| 4 | 90.40% |
+| 平均 | **91.54%** |
+
+## 持续负载
+
+30 分钟闭环测试采用 1M 上下文、`TP4 / DP2 / EP8`、DSpark k5、16K chunk 和 `0.90` 显存水位；请求为 ISL 1,024 / OSL 1,000，并发 64。每完成一个请求就补发一个，保持 64 个请求在途，最终 **7,940/7,940** 个请求成功完成。吞吐与延迟见[性能与调优](performance.md#长输入与混合负载)。
 
 ## 构建与来源校验
 
-| 检查项 | 入口 | 结果 |
-|---|---|---|
-| 模型文件与权重校验 | `scripts/model_check.py` | 固定 ModelScope revision，83 个文件（含 48 个权重分片）大小与 SHA256 全部通过 |
-| 适配层原子安装 | `adaptation/install.py` | 43 个适配文件与 `adaptation/manifest.json` SHA256 校验一致后原子写入 |
-| 运行时源码复核 | `scripts/check_runtime.py` | 容器内已安装文件与源码清单指纹一致 |
-| CPU 合约与回归测试 | `unittest` | uv Python 3.10 本地运行 157 项，8 项依赖运行时的检查跳过；固定镜像挂载实际 tokenizer 后，171 项全部通过，无跳过 |
-| CPU 热路径检查 | `scripts/hotpaths/check.py` | 34 个用例全部通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影 |
-| 固定 digest 镜像构建 | `scripts/build.sh` | 镜像构建、runtime 校验与原生 MXFP8 loader 检查通过 |
+| 检查项 | 结果 |
+|---|---|
+| 模型来源 | 固定 ModelScope revision；83 个模型文件（含 48 个权重分片）的大小与 SHA256 校验通过 |
+| 适配层安装 | 45 个适配文件与清单哈希一致，原子安装及容器内源码复核通过 |
+| 本地代码回归 | Python 3.10 运行 349 项，8 项跳过 |
+| 构建环境代码回归 | 运行 363 项，5 项跳过 |
+| CPU 热路径 | 34 个用例通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影；结果见 [hotpaths-cpu.json](evidence/hotpaths-cpu.json) |
+| 镜像构建 | 固定 digest 构建、运行时校验和原生 MXFP8 loader 检查通过 |
 
-## 协议与模型功能
-
-- **工具调用与推理续轮**：多轮工具续轮中的 `reasoning_content`、反序工具结果归并和图片顺序与官方编码器一致。
-- **消息渲染一致性**：同步与异步 renderer 共用同一消息归一化与排序逻辑，跨 `user` / `system` / `assistant` 边界自动隔离工具状态。
-- **官方编码器对齐**：官方 5 组输入夹具覆盖 40 种思考模式与 `reasoning_effort` 组合，编码输出逐字匹配。
-- **原生多模态**：单图、多图、缓存命中图片、重复图片及完整 1024-token 视觉预算边界全部通过。
-- **视频扩展**：`video_url` 由 pinned vLLM media IO 在解码前按默认 1 FPS、`num_frames=32` 选取最多 32 个均匀时间点；每个视频保留稳定的 `vid_...` 身份和全局文本 wrapper，并将同一身份写入 vLLM content-part `uuid`，再展开为按时间顺序排列的图片帧 span。启动配置限制为每请求最多 64 张图片和 2 个视频。仓库内覆盖媒体抽样、帧边界、wrapper 和 UUID 合约；GPU endpoint 回执需单独归档。多轮重放相同媒体引用及参数时身份保持稳定，但仍需要同时保留媒体输入或可用的视觉/KV cache。
-- **Responses 协议**：7 项真实接口验收覆盖 custom-tool 历史与流式事件、工具三轮续接、multipart/refusal 历史及图像与视频输入；另验证了流式 logprobs 与存储结果一致性。`scripts.acceptance.responses` 保存完整请求、响应和 SSE 事件，结果见 [验收报告](gpu-acceptance.md)。
-- **分布式与投机解码**：`tp8 / ep8` 与 `tp4dp2 / ep8`、CUDA Graph、FP8 MLA KV cache、DSpark k5、EPLB 和 EP8 通信路径均完成目标机启动验收，并通过文本、工具和图文 smoke。
-- **实验开关**：`decode-metadata`、`ragged-reuse`、`stacked-kv` 分别完成目标机启动并通过文本和工具 smoke；`bounded-prefill` 与 `prefill-throttle` 在 1M 配置下完成启动和混合负载测试，结果见 [基准结果](benchmarks.md)。
-- **长上下文容量**：260K 与 1,000,016 token 的单请求 prompt 均完成预填充验收；4 个和 16 个 ISL 1047000 的请求同时进入均全部成功，16 个请求超过 KV cache 最大并发 4.03 后按容量排队，没有错误或中止。
-
-## 验收 case
-
-功能验收和质量评测按职责拆成四份 catalog；配置中的 `runner` 是可直接用 `python -m` 调用的模块。视觉与 Responses case 执行真实 GPU 接口请求，保存请求、响应、期望值和失败详情；代码级回归由 `tests/` 单独验证。
-
-| 类别 | 配置 | 入口 | 内容 |
-|---|---|---|---|
-| core | [`core.json`](../config/acceptance/core.json) | `scripts.acceptance.core` | 文本、工具续轮和基础图像 |
-| visual | [`visual.json`](../config/acceptance/visual.json) | `scripts.acceptance.visual` | 图像上限、视频采样、混排和 chunk 边界 |
-| responses | [`responses.json`](../config/acceptance/responses.json) | `scripts.acceptance.responses` | Responses 基础请求、custom-tool history 和 streaming |
-| quality | [`quality.json`](../config/acceptance/quality.json) | `scripts.acceptance.quality` | PPL 和 GPQA Diamond 质量评测计划 |
-
-每个入口都支持 `--list`。视觉与 Responses 共用合成的数字图片和短、长视频；先用 FFmpeg 生成素材，再传入真实启动回执和结果目录：
-
-```bash
-python3 -m scripts.acceptance.visual --prepare-fixtures --fixtures-dir runtime/visual-fixtures
-python3 -m scripts.acceptance.visual --case all --fixtures-dir runtime/visual-fixtures \
-  --launch-receipt runtime/<启动时间戳>/launch.json --output runtime/visual-acceptance
-python3 -m scripts.acceptance.responses --case all --fixtures-dir runtime/visual-fixtures \
-  --launch-receipt runtime/<启动时间戳>/launch.json --output runtime/responses-acceptance.json
-```
-
-视频 chunk 对照需分别启动关闭、开启两种模式：先运行 `visual-video-chunked-disabled`，再向开启模式的 runner 传入 `--chunk-baseline <关闭模式结果目录>/visual-video-chunked-disabled/case.json`。两侧使用相同请求并校验相同语义输出；开启模式还要求未缓存的输入超过 chunk 预算。`--case all` 会将当前启动模式不适用的 case 记为 `NOT_RUN`，完整验收需合并两种模式的结果。处理器时间映射和调度边界另做运行时结构检查。
-
-`previous_response_id` 验收需要启动时加上 `--responses-store`，启用进程内历史存储并使用单个 API 进程；GPU 的 TP / DP 配置不变。历史仅在该服务进程存活期间有效，重启会清空，默认关闭。
-
-catalog 的统计范围是 25 个 benchmark case、27 个 acceptance case；`chunk_budget` A/B case 包含 11 个负载单元，core 的 5 个 `needle_tokens` 是按目标长度动态追加的长上下文 case。编码器基准 `scripts.benchmarks.bench_encoding` 和 `scripts.hotpaths.check` 属于 CPU / 构建支持检查，结果分别写入 `docs/evidence/encoding-benchmark.json` 和 `docs/evidence/hotpaths-cpu.json`，不代表 GPU endpoint acceptance，也不重复放入上述 catalog。
-
-完整硬件摸底由 `scripts.benchmarks.profile_plan` 展开上述 catalog，`profile_matrix` 执行逐组固定配置测试，`profile_campaign` 管理隔离服务切换。上下文、显存水位、chunk 对照、适用条件、重复次数和最终 GPQA / 压力测试的安排见 [性能摸底计划](profiling-plan.md)。
-
-## 精度准入
-
-每个性能候选通过 `scripts.acceptance.core` 与 `scripts.acceptance.quality_gate` 在固定请求集（`temperature=0`、`seed=1017`）上进行对比校验：
-
-- 对文本、`reasoning_content`、结构化 `tool_calls`、工具续轮、图文和长上下文输出计算 SHA256 摘要。
-- 候选与基线的全部 case 均需通过且输出摘要一致，方可纳入默认推荐配置。
-- 当服务端返回 `draft_tokens` / `accepted_tokens` 计数时，`scripts/quality_metrics.py` 自动汇总投机解码接受率。
-
-对基线服务和候选服务各运行一次 `scripts.acceptance.core`，再用 `scripts.acceptance.quality_gate` 比较两份结果。`--launch-receipt` 是 `launch.py --start` 写入 `runtime/<时间戳>/launch.json` 的启动回执，脚本据此确认被测服务就是回执里的容器：
-
-```bash
-python3 -m scripts.acceptance.core --launch-receipt runtime/<基线时间戳>/launch.json \
-  --output runtime/acceptance-baseline.json
-python3 -m scripts.acceptance.core --launch-receipt runtime/<候选时间戳>/launch.json \
-  --output runtime/acceptance-candidate.json
-python3 -m scripts.acceptance.quality_gate --reference runtime/acceptance-baseline.json \
-  --candidate runtime/acceptance-candidate.json --output runtime/quality-gate.json
-```
-
-`--needle-tokens` 追加一个长上下文大海捞针用例，可选 1024、32768、131072、523000 或 1047000，且不能超过启动时的上下文上限。
-
-## 全模型 PPL
-
-wikitext-2 test 的 token PPL 为 2.772，word PPL 3.168，byte PPL 1.2405，共 134 个 2048 token 窗口，打分 272802 token。数据准备和打分方式见 [基准结果](benchmarks.md#全模型-ppl)。
-
-## GPQA Diamond
-
-基于完整 198 题（`eval_batch_size=32`、`top_p=0.95`、`max_tokens=65536`、`reasoning_effort=max`、`temperature=0`）完成 4 轮独立评测：
-
-| 轮次 | 准确率 |
-|---:|---:|
-| Round 1 | 92.42% |
-| Round 2 | 90.40% |
-| Round 3 | 92.93% |
-| Round 4 | 90.40% |
-| **平均** | **91.54%** |
-
-4 轮均为 `198/198` 完整评分，失败率为 `0`。
+实现说明见[架构说明](architecture.md)。

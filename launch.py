@@ -240,7 +240,7 @@ def make_plan(args):
         "--name",
         args.name,
         "--label",
-        "dsv41-a100.owner=deepseek-v4.1-flash-a100",
+        "vllm-dsf-rearguard.owner=vllm-dsf-rearguard",
         "--gpus",
         "all",
         "--ipc=private",
@@ -353,8 +353,8 @@ def parser():
         "--eager", action="store_true", help="Correctness control without CUDA graphs"
     )
     p.add_argument("--port", type=int, default=6789)
-    p.add_argument("--name", default="deepseek-v41-a100")
-    p.add_argument("--image", default="deepseek-v4.1-flash-a100:dev")
+    p.add_argument("--name", default="vllm-dsf-rearguard")
+    p.add_argument("--image", default="vllm-dsf-rearguard:dev")
     p.add_argument("--receipt", type=Path, default=ROOT / "runtime/model-verified.json")
     p.add_argument("--start", action="store_true")
     return p
@@ -387,7 +387,7 @@ def main():
                 "--entrypoint",
                 "python3",
                 image["Id"],
-                "/opt/dsv41-a100/check_runtime.py",
+                "/opt/vllm-dsf-rearguard/check_runtime.py",
             ],
         )
     )

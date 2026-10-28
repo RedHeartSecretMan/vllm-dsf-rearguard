@@ -1,6 +1,6 @@
 {
   "status": "PASS",
-  "run_id": "chunk-budget-20261024",
+  "run_id": "chunk-budget",
   "workload_sha256": "ea6cbfec447f454bb4dc71c46bd447904a0a7b3217bca49f00d67c9083086cc0",
   "statistic": "Per-cell median/min/max of 3 whole-burst TPS values. Latency medians are medians of the 3 repeat quantiles; no pooled quantiles or cross-workload score.",
   "cache_policy": "cold KV; distinct request salts; cached_tokens must be zero",
@@ -2747,7 +2747,7 @@
         "never",
         "--init",
         "--name",
-        "dsf-main-64b48b3",
+        "deepseek-v41-a100",
         "--label",
         "dsv41-a100.owner=deepseek-v4.1-flash-a100",
         "--gpus",
@@ -2760,9 +2760,9 @@
         "-p",
         "127.0.0.1:6789:8000",
         "--mount",
-        "type=bind,src=/data1/wanghao/Projects/Datas/models/deepseek/DeepSeek-V4.1-Flash-1017,dst=/models/DeepSeek-V4.1-Flash-1017,readonly",
+        "type=bind,src=/path/to/DeepSeek-V4.1-Flash-1017,dst=/models/DeepSeek-V4.1-Flash-1017,readonly",
         "--mount",
-        "type=volume,src=dsf-main-64b48b3-cache,dst=/workspace",
+        "type=volume,src=deepseek-v41-a100-cache,dst=/workspace",
         "--log-opt",
         "max-size=100m",
         "--log-opt",
@@ -2883,10 +2883,8 @@
         "--no-disable-chunked-mm-input"
       ],
       "source_manifest_sha256": "98d985dde17f699d411ae376ac55481c4660140c5074360a15308c68535fa006",
-      "image_id": "sha256:c1a37e834eecdb77a89c5b6b182d96b6ef3492f2b417af94abd7752fc1b3c520",
-      "container_id": "286a96b48687917d1087a96c057e87c0c8e3fc6c10055e443598b0f393127d55"
+      "image_id": "sha256:c1a37e834eecdb77a89c5b6b182d96b6ef3492f2b417af94abd7752fc1b3c520"
     },
-    "container_started_at": "2026-10-24T16:46:19.120781389Z",
     "verification": "Health and model listing only; performance measurements were exclusively on port 6688",
     "kv_capacity": {
       "available_kv_gib": {

@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 29
+      "files": 31
     },
     {
       "name": "model_support",
@@ -18,6 +18,12 @@
     }
   ],
   "files": [
+    {
+      "path": "vllm/_version.py",
+      "base_sha256": "8fe922c590c4a22cd3a40f82354eb51bb9d8dba55463dcc9452788b0a5e4e12b",
+      "patched_sha256": "9ffe6f749b0f36eef0679ecb1ae44be7ce6ebe597e862baf654056cdd1b44505",
+      "stage": "base_integration"
+    },
     {
       "path": "vllm/distributed/device_communicators/cuda_communicator.py",
       "base_sha256": "5cc03bf9eb16e878a624034da4243944c6685e3ddb040cf10068510c0e6a441c",
@@ -34,6 +40,30 @@
       "path": "vllm/entrypoints/openai/chat_completion/protocol.py",
       "base_sha256": "0ed35d120613fac0ae879a5be0463265cbf6731875fb755d31962a4639db85bf",
       "patched_sha256": "a81c8e4c7c1208f3094bd54555975f65d6ec231ed3ab87a74e8f058fc1864a51",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/protocol.py",
+      "base_sha256": "95608b698c923f92e8494a98d4db92ca1fdbdde11b4aad4181c8e6eabb36585e",
+      "patched_sha256": "2ebe57b9825bc29748b5063e566adebcd60e472fd0d1fed19b0b9e19de41b8d5",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/serving.py",
+      "base_sha256": "dc720ca7038f73581f5576b0c5c56e086167fea3323f29f2d76bbacdb5b5b6db",
+      "patched_sha256": "b311af39219913c88f11884b8d84cd02f074ca37d3675bb55da9932392f4351e",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/streaming_events.py",
+      "base_sha256": "f2681d82bdb1d041b3d78535db90b556d29c6474f790b783079c7ea156319017",
+      "patched_sha256": "d36dd7e8a2789c7db913c46031055e53cba845c24d3a70e6c9a547163c88e98e",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/entrypoints/openai/responses/utils.py",
+      "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
+      "patched_sha256": "47f7994f45cf57f1615bd867f813d3c0925926717dd51eb6d7c6c49a9e5a1d19",
       "stage": "base_integration"
     },
     {
@@ -58,12 +88,6 @@
       "path": "vllm/model_executor/layers/sparse_attn_indexer.py",
       "base_sha256": "fb063e263c21b2aed10abf23c3db0d68756a90973b8f3731e61cf3cb615bec3f",
       "patched_sha256": "ec5a00c5bdc9ed47e5bca110b0ae5fb816a556a48c6d6e64366df1a42f7dcf17",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/platforms/cuda.py",
-      "base_sha256": "467344dd8461f20f2b9ded1053baa59cc3653ef60df7119f60e58dd498181439",
-      "patched_sha256": "f5284a0ad2252a5e2af35885fefc6644641384ffd1a0d112da196af729872663",
       "stage": "base_integration"
     },
     {
@@ -93,7 +117,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/attention.py",
       "base_sha256": "991af78c9eda16a0f829ecba57397b2a434335dfecbbd93fff1dc40cbbb92698",
-      "patched_sha256": "e2e7f4adb5fdba7b075c97962c4ed2aeac0b8ddc906fb41a7ef77b8f7a951a49",
+      "patched_sha256": "dd02f6c33532b32046bdb37db75cfc67696eee9724fc8c8598efde751d3e39dd",
       "stage": "model_support"
     },
     {
@@ -121,6 +145,12 @@
       "stage": "model_support"
     },
     {
+      "path": "vllm/parser/abstract_parser.py",
+      "base_sha256": "368997944992edcd312acc6cb08de6877c87ed7160c8b4ca5897d7ae2bdc39d7",
+      "patched_sha256": "8606cb1c38e4266c37260e014ca55d6f2bbc99e9b40459913d0c23abbfe48b13",
+      "stage": "base_integration"
+    },
+    {
       "path": "vllm/parser/deepseek_v4.py",
       "base_sha256": "8de2aad7b4236ab7a23cfcee66f2fc76022a8c4485fdf2e7ad4046b5e7dd2427",
       "patched_sha256": "bbd1b55bdf8a5b76be784450861f5a082b02f234570479b963d1364c41e0b1de",
@@ -139,15 +169,15 @@
       "stage": "base_integration"
     },
     {
+      "path": "vllm/platforms/cuda.py",
+      "base_sha256": "467344dd8461f20f2b9ded1053baa59cc3653ef60df7119f60e58dd498181439",
+      "patched_sha256": "f5284a0ad2252a5e2af35885fefc6644641384ffd1a0d112da196af729872663",
+      "stage": "base_integration"
+    },
+    {
       "path": "vllm/renderers/deepseek_v4.py",
       "base_sha256": "b989ea4b4240df0f5eeb832942d1aaa8e72e56743b45186b1b6145d7e7bbbd3a",
       "patched_sha256": "d9ed08a61c94af3926b0fde7d13e17a9de9821b7129d1831a2a334cd92b5c3a4",
-      "stage": "model_support"
-    },
-    {
-      "path": "vllm/tokenizers/video_prompt.py",
-      "base_sha256": null,
-      "patched_sha256": "b502222bd36eee35e88db030f340c4f016eeb1c3bcee47c8d067f67aedf8a434",
       "stage": "model_support"
     },
     {
@@ -161,6 +191,24 @@
       "base_sha256": "081382cb953a1c8041fdfc82a6001cf0c932553171436625c89fe5b9fbcda464",
       "patched_sha256": "c0797e35616d3c75d33af5284b1e0c80e9c708e205b859b7862c737e167d3a44",
       "stage": "model_support"
+    },
+    {
+      "path": "vllm/tokenizers/video_prompt.py",
+      "base_sha256": null,
+      "patched_sha256": "b502222bd36eee35e88db030f340c4f016eeb1c3bcee47c8d067f67aedf8a434",
+      "stage": "model_support"
+    },
+    {
+      "path": "vllm/tool_parsers/structural_tag_registry.py",
+      "base_sha256": "5d1a4b2789cb0fe05f8fbfa8739036965cb8a2746efff77749bb53176aad569c",
+      "patched_sha256": "2f827c803e54035e554038f5715ab9219215d51a4843d760167f17a62386bfa7",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/tool_parsers/utils.py",
+      "base_sha256": "e9d1383512358a193efdacdc20c407da4991a4c5bb05bccb5485ba47c5dfffde",
+      "patched_sha256": "5d11169a3ded6b1bb89cba1499eff441f938f973466d577de4624dcc5c776f65",
+      "stage": "base_integration"
     },
     {
       "path": "vllm/transformers_utils/configs/deepseek_v41.py",
@@ -189,7 +237,7 @@
     {
       "path": "vllm/v1/attention/ops/rocm_aiter_mla_sparse.py",
       "base_sha256": "72ecfe633dd70ce7ea0f75bef45a78aa618a9d79194a9c3b58040fc2eebf9711",
-      "patched_sha256": "a88af06e8c03fdec821d93101301b344f8f2bd6252ece6a51717b9ac0173e6ab",
+      "patched_sha256": "240b3ea124aaa1caf2bcb69d719321574b321ef83ec375b413bebdd6819e0d09",
       "stage": "base_integration"
     },
     {
@@ -197,6 +245,12 @@
       "base_sha256": "5ef33e44cebc274bca239cc4337ad1370298fd369660b025ca98eec48c4cc015",
       "patched_sha256": "fbe64800efed19803283bf8cfc8c43622c6b411e31c13eb27b1aba21248163d3",
       "stage": "model_support"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/cudagraph_utils.py",
+      "base_sha256": "c20278e8e8a1dfd65467059ddadb3fdd2a576178e839509d53202a18cef32d7b",
+      "patched_sha256": "2ada603583a7f27af1b26fbc599fe57f31e96902cc8fb7e1dd3b249c4d2c9c12",
+      "stage": "base_integration"
     },
     {
       "path": "vllm/v1/worker/gpu/spec_decode/autoregressive/speculator.py",
@@ -229,51 +283,9 @@
       "stage": "base_integration"
     },
     {
-      "path": "vllm/_version.py",
-      "base_sha256": "8fe922c590c4a22cd3a40f82354eb51bb9d8dba55463dcc9452788b0a5e4e12b",
-      "patched_sha256": "9ffe6f749b0f36eef0679ecb1ae44be7ce6ebe597e862baf654056cdd1b44505",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/entrypoints/openai/responses/utils.py",
-      "base_sha256": "21c24e458d2e84421563eb7fd81a7628e61469b6c4a761a9d591565dd2e4b87a",
-      "patched_sha256": "47f7994f45cf57f1615bd867f813d3c0925926717dd51eb6d7c6c49a9e5a1d19",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/entrypoints/openai/responses/protocol.py",
-      "base_sha256": "95608b698c923f92e8494a98d4db92ca1fdbdde11b4aad4181c8e6eabb36585e",
-      "patched_sha256": "2ebe57b9825bc29748b5063e566adebcd60e472fd0d1fed19b0b9e19de41b8d5",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/entrypoints/openai/responses/serving.py",
-      "base_sha256": "dc720ca7038f73581f5576b0c5c56e086167fea3323f29f2d76bbacdb5b5b6db",
-      "patched_sha256": "b311af39219913c88f11884b8d84cd02f074ca37d3675bb55da9932392f4351e",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/tool_parsers/utils.py",
-      "base_sha256": "e9d1383512358a193efdacdc20c407da4991a4c5bb05bccb5485ba47c5dfffde",
-      "patched_sha256": "5d11169a3ded6b1bb89cba1499eff441f938f973466d577de4624dcc5c776f65",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/tool_parsers/structural_tag_registry.py",
-      "base_sha256": "5d1a4b2789cb0fe05f8fbfa8739036965cb8a2746efff77749bb53176aad569c",
-      "patched_sha256": "2f827c803e54035e554038f5715ab9219215d51a4843d760167f17a62386bfa7",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/parser/abstract_parser.py",
-      "base_sha256": "368997944992edcd312acc6cb08de6877c87ed7160c8b4ca5897d7ae2bdc39d7",
-      "patched_sha256": "8606cb1c38e4266c37260e014ca55d6f2bbc99e9b40459913d0c23abbfe48b13",
-      "stage": "base_integration"
-    },
-    {
-      "path": "vllm/entrypoints/openai/responses/streaming_events.py",
-      "base_sha256": "f2681d82bdb1d041b3d78535db90b556d29c6474f790b783079c7ea156319017",
-      "patched_sha256": "d36dd7e8a2789c7db913c46031055e53cba845c24d3a70e6c9a547163c88e98e",
+      "path": "vllm/v1/worker/gpu_worker.py",
+      "base_sha256": "6fd8c48008da7664095c3a3a66c0f15b1842e1fdf8afbcb4911de77e3233a242",
+      "patched_sha256": "1c42ebd0280e23fdae44e5187498083758addd88b061ec3bc61b3944941410da",
       "stage": "base_integration"
     }
   ],

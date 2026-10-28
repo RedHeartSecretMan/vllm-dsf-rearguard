@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 from vllm.config import (
     CacheConfig,
+    CUDAGraphMode,
     VllmConfig,
     get_current_vllm_config,
 )
@@ -455,8 +456,11 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                 candidate_write=is_candidate_source,
             )
 
+        self._defer_attn_output = vllm_config.use_v2_model_runner
+        self._attn_compilation_config = vllm_config.compilation_config
+        self._attn_enforce_eager = vllm_config.model_config.enforce_eager
         self._prepare_and_attn_fn = self._prepare_and_attn
-        if not vllm_config.use_v2_model_runner:
+        if not self._defer_attn_output:
             # MRV1's piecewise capture only tolerates the wide eager region: with
             # the narrow one the attention input preparation stays in the captured
             # graph and MRV1 produces garbage (#51430).
@@ -584,14 +588,29 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         hidden_states: torch.Tensor,
         llama_4_scaling: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        # Pre-allocate attention output with FlashMLA-padded head count.
-        # The op writes into `o_padded`; we slice to n_local_heads after.
-        num_tokens = hidden_states.shape[0]
-        o_padded = torch.empty(
-            (num_tokens, self.padded_heads, self.head_dim),
-            dtype=hidden_states.dtype,
-            device=hidden_states.device,
-        )
+        # Keep the original allocation order for captured shapes so the
+        # decode graph pool does not grow with this prefill optimization.
+        # The runner may resolve capture sizes after model construction.
+        defer_output = False
+        if self._defer_attn_output:
+            compilation = self._attn_compilation_config
+            capture_limit = (
+                0
+                if self._attn_enforce_eager
+                or compilation.cudagraph_mode == CUDAGraphMode.NONE
+                else compilation.max_cudagraph_capture_size or 0
+            )
+            defer_output = hidden_states.shape[0] > capture_limit
+
+        # MRV1's wide eager break always writes a caller-owned static output.
+        # Only larger MRV2 prefill shapes allocate after Q preparation.
+        o_padded = None
+        if not defer_output:
+            o_padded = torch.empty(
+                (hidden_states.shape[0], self.padded_heads, self.head_dim),
+                dtype=hidden_states.dtype,
+                device=hidden_states.device,
+            )
 
         # Keep the attention input preparation in the captured graph. Only the
         # sparse indexer and MLA attention run in the eager break below.
@@ -600,7 +619,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         )
         qr, qr_scale, kv = self._split_qkv_and_norm(qr_kv)
 
-        self._prepare_and_attn_fn(
+        prepared_output = self._prepare_and_attn_fn(
             hidden_states,
             qr,
             kv,
@@ -610,6 +629,9 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             positions,
             o_padded,
         )
+        if defer_output:
+            o_padded = prepared_output
+        assert o_padded is not None
         o = o_padded[:, : self.n_local_heads, :]
 
         # Inverse-RoPE + wo_a + wo_b output projection (platform-specific).
@@ -694,8 +716,8 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         kv_score: torch.Tensor,
         indexer_weights: torch.Tensor,
         positions: torch.Tensor,
-        o_padded: torch.Tensor,
-    ) -> None:
+        o_padded: torch.Tensor | None,
+    ) -> torch.Tensor:
         """Attention input preparation followed by the sparse indexer and MLA.
 
         Only the latter runs in the eager break.
@@ -758,6 +780,15 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             indexer_result = prepare_indexer()
         index_q, index_q_scale, index_weights_out = indexer_result
 
+        if o_padded is None:
+            # The narrow eager break below still receives a pre-allocated
+            # static output. Avoid overlapping it with both the projected
+            # and fused Q tensors during input preparation.
+            o_padded = torch.empty(
+                (hidden_states.shape[0], self.padded_heads, self.head_dim),
+                dtype=hidden_states.dtype,
+                device=hidden_states.device,
+            )
         self._sparse_indexer_and_attn(
             hidden_states,
             index_q,
@@ -768,6 +799,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
             positions,
             o_padded,
         )
+        return o_padded
 
     def _fused_wqa_wkv_gemm(self, hidden_states: torch.Tensor) -> torch.Tensor:
         # Override point: the ROCm layer preshuffles this weight in place, so
@@ -882,6 +914,11 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
                     (0, 0, 0, self.padded_heads - self.n_local_heads),
                     value=0.0,
                 )
+            # fp8_ds_mla returns a distinct Q even without head padding.
+            # Match that allocation/lifetime; plain-row BF16 rewrites Q
+            # in place and retains its existing profiling behavior.
+            if self.kv_cache_torch_dtype == torch.uint8:
+                return q.clone()
             return q
 
         swa_metadata = cast(

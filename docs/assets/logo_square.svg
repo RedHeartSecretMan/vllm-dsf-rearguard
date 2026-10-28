@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="256" height="256" viewBox="0 0 256 256">
+<defs>
+<linearGradient id="linear-pattern-0" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="1" gradientTransform="matrix(240, 0, 0, 240, 8, 8)">
+<stop offset="0" stop-color="rgb(11.764706%, 22.745098%, 54.117647%)" stop-opacity="1"/>
+<stop offset="1" stop-color="rgb(4.313725%, 7.843137%, 18.823529%)" stop-opacity="1"/>
+</linearGradient>
+<clipPath id="clip-0">
+<path clip-rule="nonzero" d="M 56 43 L 227 43 L 227 233 L 56 233 Z M 56 43 "/>
+</clipPath>
+<clipPath id="clip-1">
+<path clip-rule="nonzero" d="M 64 8 L 192 8 C 222.929688 8 248 33.070312 248 64 L 248 192 C 248 222.929688 222.929688 248 192 248 L 64 248 C 33.070312 248 8 222.929688 8 192 L 8 64 C 8 33.070312 33.070312 8 64 8 Z M 64 8 "/>
+</clipPath>
+<clipPath id="clip-2">
+<path clip-rule="nonzero" d="M 93 43 L 137 43 L 137 91 L 93 91 Z M 93 43 "/>
+</clipPath>
+<clipPath id="clip-3">
+<path clip-rule="nonzero" d="M 64 8 L 192 8 C 222.929688 8 248 33.070312 248 64 L 248 192 C 248 222.929688 222.929688 248 192 248 L 64 248 C 33.070312 248 8 222.929688 8 192 L 8 64 C 8 33.070312 33.070312 8 64 8 Z M 64 8 "/>
+</clipPath>
+</defs>
+<path fill-rule="nonzero" fill="url(#linear-pattern-0)" d="M 64 8 L 192 8 C 222.929688 8 248 33.070312 248 64 L 248 192 C 248 222.929688 222.929688 248 192 248 L 64 248 C 33.070312 248 8 222.929688 8 192 L 8 64 C 8 33.070312 33.070312 8 64 8 Z M 64 8 "/>
+<g clip-path="url(#clip-0)">
+<g clip-path="url(#clip-1)">
+<path fill="none" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" stroke="rgb(97.254902%, 98.039216%, 98.823529%)" stroke-opacity="1" stroke-miterlimit="4" d="M 64 226 C 60 174 70 134 92 106 L 100 50 L 130 84 C 146 82 160 86 172 94 L 214 116 C 222 121 220 130 211 132 L 176 138 L 192 156 L 174 160 L 188 182 L 172 186 C 174 202 178 214 184 226 "/>
+</g>
+</g>
+<g clip-path="url(#clip-2)">
+<g clip-path="url(#clip-3)">
+<path fill="none" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" stroke="rgb(98.431373%, 74.901961%, 14.117647%)" stroke-opacity="1" stroke-miterlimit="4" d="M 100 50 L 130 84 "/>
+</g>
+</g>
+<path fill-rule="nonzero" fill="rgb(98.431373%, 74.901961%, 14.117647%)" fill-opacity="1" d="M 156.5 106 C 156.5 110.695312 152.695312 114.5 148 114.5 C 143.304688 114.5 139.5 110.695312 139.5 106 C 139.5 101.304688 143.304688 97.5 148 97.5 C 152.695312 97.5 156.5 101.304688 156.5 106 Z M 156.5 106 "/>
+</svg>

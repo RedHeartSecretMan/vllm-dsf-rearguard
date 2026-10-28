@@ -1,14 +1,11 @@
 {
   "status": "PASS",
   "recorded_at": "2026-10-24T15:23:07.237675+00:00",
-  "host_alias": "nvidia_112.9.48",
   "hardware": "8 x NVIDIA A100-SXM4-80GB",
   "profiles": {
     "normal_32768": {
       "revision": "756941245a1af24576d3f97cc74e295064128e74",
       "image_id": "sha256:235c0fa37f92eb29a7ec0a959e82da9e3c5cf559dec54099939a4971db9a1653",
-      "container_id": "66d4bb831e4604142693ac0128c486e159ff6f36c1e90dc17f51d015d9504cc5",
-      "container": "dsf-main-7569412",
       "context": 1048576,
       "parallel": {
         "tp": 4,
@@ -25,8 +22,6 @@
     "chunked_1024": {
       "revision": "4409813d9cfe9acbd8e6885eb7c563eb7902bfe2",
       "image_id": "sha256:b9469f6bbbf4a25468d664f701adfb688bbaaff4befc78f29e5bdf545415ccb6",
-      "container_id": "75acf52734c3b2fa7b37544fecdd77b1bd0c34af7b41b4c31c2d4fff64239702",
-      "container": "dsf-acceptance-4409813-chunked",
       "context": 1048576,
       "parallel": {
         "tp": 4,
@@ -322,7 +317,7 @@
     "number": 3,
     "color": "blue"
   },
-  "artifact_directory": "/tmp/response-fix/gpu-acceptance-0f76da6",
+  "artifact_directory": "gpu-acceptance",
   "artifacts": {
     "complete-launch.json": {
       "sha256": "c28a6e849127579935da9176d67194a0716d85b122bb0c4c94aa32d51092e903",
@@ -386,8 +381,6 @@
     }
   },
   "archive": {
-    "repository_workspace_path": "runtime/gpu-acceptance-0f76da6/evidence.tar.gz",
-    "remote_path": "/tmp/response-fix/gpu-acceptance-0f76da6-evidence.tar.gz",
     "sha256": "e0921f5423f7f1202c98581ba379f9db496a631610758dde95f9945f1cea09e7"
   }
 }

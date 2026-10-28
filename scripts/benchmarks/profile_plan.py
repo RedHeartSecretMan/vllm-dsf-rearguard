@@ -295,7 +295,7 @@ def group_plan(context: int, chunk: int = 16384, memory: float = .90,
                 reason = "Source case requires the opposite multimodal mode; fixed profiles enable MM chunking."
             elif row["case_id"] == "visual-video-chunked-frame-boundary" and chunk >= 16384:
                 reason = "384px fixture does not cross this chunk budget; use the dedicated boundary acceptance evidence."
-                row["requires"].append("dedicated_boundary_evidence:docs/evidence/gpu-acceptance-20261024.json")
+                row["requires"].append("dedicated_boundary_evidence:docs/evidence/gpu-acceptance.json")
             required_tokens = row.get("admission_tokens")
             if required_tokens is None and row["isl"] is not None and row["osl"] is not None:
                 required_tokens = row["isl"] + row["osl"]

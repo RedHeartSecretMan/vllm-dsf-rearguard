@@ -1,6 +1,15 @@
+[project]
+name = "vllm-dsf-rearguard"
+version = "0.1.0"
+description = "vLLM adaptation and deployment tools for DeepSeek-V4.1-Flash-1017 on 8x A100"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+[tool.ruff]
 # Project code is linted. The vLLM overlay and the pinned reference files are
 # hash-checked against adaptation/manifest.json and keep their upstream style.
 extend-exclude = ["adaptation/files", "adaptation/reference", "runtime"]
 
-[lint]
+[tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B"]
