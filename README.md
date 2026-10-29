@@ -177,6 +177,7 @@ The startup log reports the actual KV capacity. Throughput, latency and capacity
 |---|---|
 | [Architecture](docs/architecture.md) | Adaptation layer, protocol and multimodal handling, performance work, build and launch safety |
 | [Performance](docs/performance.md) | Configuration guide, test method, full performance data and configuration comparisons |
+| [Performance plan](docs/perf-plan.md) | Feature repair gates and performance optimization matrix |
 | [Validation](docs/validation.md) | Functional, protocol, accuracy, resource limits, sustained load and build checks |
 | [Changelog](CHANGELOG.md) | Features, optimizations, fixes and known limits by version |
 | [Adaptation layer](adaptation/README.md) | vLLM adaptation files, manifest and install flow |

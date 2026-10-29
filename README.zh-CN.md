@@ -177,6 +177,7 @@ curl http://127.0.0.1:6789/v1/chat/completions \
 |---|---|
 | [架构说明](docs/architecture.md) | 适配层结构、协议与多模态处理、性能实现、构建与启动安全 |
 | [性能与调优](docs/performance.md) | 配置建议、测试方法、完整性能数据和配置对照 |
+| [性能优化计划](docs/perf-plan.md) | 功能修复准入、性能候选和正式矩阵 |
 | [验证结果](docs/validation.md) | 功能、协议、精度、资源边界、持续负载和构建校验 |
 | [更新日志](CHANGELOG.md) | 版本功能、优化、修复和使用限制 |
 | [适配层说明](adaptation/README.md) | vLLM 适配文件、清单和安装流程 |
