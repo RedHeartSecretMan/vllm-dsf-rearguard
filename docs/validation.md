@@ -70,7 +70,7 @@ wikitext-2 test 每组使用相同的 134 个窗口和 272,802 个计分 token�
 | 模型来源 | 固定 ModelScope revision；83 个模型文件（含 48 个权重分片）的大小与 SHA256 校验通过 |
 | 适配层安装 | 45 个适配文件与清单哈希一致，原子安装及容器内源码复核通过 |
 | 本地代码回归 | Python 3.10 运行 349 项，8 项跳过 |
-| 构建环境代码回归 | 运行 363 项，5 项跳过 |
+| 构建环境代码回归 | 运行 366 项，5 项跳过 |
 | CPU 热路径 | 34 个用例通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影；结果见 [hotpaths-cpu.json](evidence/hotpaths-cpu.json) |
 | 镜像构建 | 固定 digest 构建、运行时校验和原生 MXFP8 loader 检查通过 |
 

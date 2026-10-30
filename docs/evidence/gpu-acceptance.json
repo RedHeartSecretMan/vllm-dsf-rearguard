@@ -34,6 +34,23 @@
       "disable_chunked_mm_input": false,
       "responses_store": true,
       "source_manifest_sha256": "a6713366cd652cd0f29f535f7bb7c87dd54182e1e92af00d6eab06c81f56bd9c"
+    },
+    "responses_store_16384": {
+      "revision": "492221be9eba34feafa70ac3c67082c26ae6e1b1",
+      "image_id": "sha256:a7e510d5a4db99a1803f4969b5de090b07858d54a17929fac9ffb3c2a1d32991",
+      "context": 1048576,
+      "parallel": {
+        "tp": 4,
+        "dp": 2,
+        "ep": 8,
+        "max_global_seqs": 256
+      },
+      "dspark": 5,
+      "chunk": 16384,
+      "disable_chunked_mm_input": false,
+      "responses_store": true,
+      "api_server_count": 1,
+      "source_manifest_sha256": "3ae91312f71eefbff14f82ddafff8cd9cf0d620a656cacc0feedae990b699a16"
     }
   },
   "visual_runtime_sources_identical_across_profiles": {
@@ -99,37 +116,44 @@
     {
       "case": "responses-basic",
       "status": "PASS",
-      "http_requests": 1
+      "http_requests": 1,
+      "profile": "responses_store_16384"
     },
     {
       "case": "responses-custom-tool-history",
       "status": "PASS",
-      "http_requests": 1
+      "http_requests": 1,
+      "profile": "responses_store_16384"
     },
     {
       "case": "responses-custom-tool-stream",
       "status": "PASS",
-      "http_requests": 1
+      "http_requests": 1,
+      "profile": "responses_store_16384"
     },
     {
       "case": "responses-previous-response-id-tools",
       "status": "PASS",
-      "http_requests": 6
+      "http_requests": 6,
+      "profile": "responses_store_16384"
     },
     {
       "case": "responses-multipart-output",
       "status": "PASS",
-      "http_requests": 1
+      "http_requests": 1,
+      "profile": "responses_store_16384"
     },
     {
       "case": "responses-refusal-output",
       "status": "PASS",
-      "http_requests": 1
+      "http_requests": 1,
+      "profile": "responses_store_16384"
     },
     {
       "case": "responses-image-video-input",
       "status": "PASS",
-      "http_requests": 1
+      "http_requests": 1,
+      "profile": "responses_store_16384"
     }
   ],
   "core": [
@@ -316,6 +340,56 @@
     "sample_time_seconds": 71.1,
     "number": 3,
     "color": "blue"
+  },
+  "responses_store": {
+    "status": "PASS",
+    "recorded_at": "2026-10-29T00:39:00.160565+00:00",
+    "profile": "responses_store_16384",
+    "runner": {
+      "module": "scripts.acceptance.responses",
+      "sha256": "2cdf51e3d5040acde43ca9f771a2c450e6cfedaa48956b1325d1bd0cb98651e9"
+    },
+    "serving_sha256": "949a5339d12c2bfad1ced917fa8f8b185db476ced7f2d0a34ab9051379139ae9",
+    "build_tests": {
+      "count": 366,
+      "skipped": 5,
+      "status": "PASS",
+      "store_lifecycle_cases": [
+        "test_responses_store_eviction_releases_all_state",
+        "test_delete_responses_releases_response_message_and_event_state",
+        "test_background_stream_removes_terminal_event_queue"
+      ]
+    },
+    "restart_check": {
+      "status": "PASS",
+      "checks": [
+        "health",
+        "models",
+        "responses"
+      ]
+    },
+    "artifact_directory": "gpu-acceptance-492221be",
+    "artifacts": {
+      "launch.json": {
+        "sha256": "f6c0cb3b8c90c75eb688e42a8a9082f48026a1fca4c0ae4f38b86d55e57e53af",
+        "bytes": 8310
+      },
+      "responses-acceptance.json": {
+        "sha256": "c0d05a1dc4f4cf7a5ba76a8906fd00464660edeb8e4bf38604076a7f6684ca26",
+        "bytes": 85137
+      },
+      "build.log": {
+        "sha256": "1b7abfeb31e2f5f5c399e5e80dcbe630a4e606af837f72ab7dc15bbc2f2338bc",
+        "bytes": 75627
+      },
+      "restart-check.log": {
+        "sha256": "9ecbd752992184708217d133aa2ff26bdae70d426eafabb3969878933a71969e",
+        "bytes": 19190
+      }
+    },
+    "archive": {
+      "sha256": "979a05c54c29e0fd5f93da4960151efd87c2d19c1515f4cf183991aae9a05e1d"
+    }
   },
   "artifact_directory": "gpu-acceptance",
   "artifacts": {

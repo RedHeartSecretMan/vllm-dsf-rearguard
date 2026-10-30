@@ -166,7 +166,7 @@ The quick-start configuration is a good first deployment: 1M context, 16K chunk,
 | `--memory` | Start at `0.90`; if you need more KV capacity, validate `0.925` or `0.95` on your workload |
 | `--chunk` | Set `16384` explicitly; `32768` needs more memory headroom and requires `0.95` with a 1M context |
 | `--no-disable-chunked-mm-input` | Enable for large images, many images or video |
-| `--responses-store` | Enable if you need `previous_response_id`; in-memory history is LRU-bounded by `VLLM_RESPONSES_API_STORE_MAX_SIZE` (default `10000`) and stays in the current service process |
+| `--responses-store` | Enable when using `previous_response_id`; history is bounded and kept in the current API process |
 | `--experimental` | Repeatable. `stacked-kv` and `bounded-prefill` from the quick start are fully tested; validate other options on your workload |
 
 The startup log reports the actual KV capacity. Throughput, latency and capacity trade-offs for different workloads are in [Performance](docs/performance.md).
