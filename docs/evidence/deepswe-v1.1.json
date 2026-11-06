@@ -1,0 +1,117 @@
+{
+  "benchmark": "DeepSWE v1.1",
+  "protocol": "113 tasks x 8 independent full sweeps (904 trials)",
+  "model": "DeepSeek-V4.1-Flash-1017",
+  "service": "8xA100-SXM4-80GB deployment",
+  "rounds": [
+    {
+      "round": 1,
+      "passes": 83,
+      "errors": 2,
+      "reward": 0.7345132743362832,
+      "finished_at": "2026-11-02T02:34:16.014576"
+    },
+    {
+      "round": 2,
+      "passes": 80,
+      "errors": 1,
+      "reward": 0.7079646017699115,
+      "finished_at": "2026-11-04T03:18:52.548829"
+    },
+    {
+      "round": 3,
+      "passes": 79,
+      "errors": 0,
+      "reward": 0.6991150442477876,
+      "finished_at": "2026-11-04T06:15:00.410447"
+    },
+    {
+      "round": 4,
+      "passes": 76,
+      "errors": 0,
+      "reward": 0.672566371681416,
+      "finished_at": "2026-11-04T09:33:47.494149"
+    },
+    {
+      "round": 5,
+      "passes": 84,
+      "errors": 1,
+      "reward": 0.7433628318584071,
+      "finished_at": "2026-11-04T22:54:54.255535"
+    },
+    {
+      "round": 6,
+      "passes": 85,
+      "errors": 1,
+      "reward": 0.7522123893805309,
+      "finished_at": "2026-11-05T04:03:19.673448"
+    },
+    {
+      "round": 7,
+      "passes": 86,
+      "errors": 3,
+      "reward": 0.7610619469026548,
+      "finished_at": "2026-11-05T09:23:17.528218"
+    },
+    {
+      "round": 8,
+      "passes": 85,
+      "errors": 0,
+      "reward": 0.7522123893805309,
+      "finished_at": "2026-11-05T22:40:44.225952"
+    }
+  ],
+  "total_passes": 658,
+  "total_errors": 8,
+  "total_trials": 904,
+  "intention_to_treat": {
+    "pass_at_1": 0.727876,
+    "passes": 658,
+    "trials": 904,
+    "ci95": [
+      0.670354,
+      0.783186
+    ]
+  },
+  "complete_case": {
+    "pass_at_1": 0.734375,
+    "passes": 658,
+    "trials": 896,
+    "excluded_errors": 8
+  },
+  "round_score_mean": 0.727876,
+  "round_score_min": 0.672566,
+  "round_score_max": 0.761062,
+  "round_score_stddev": 0.029267,
+  "missing_task_runs": [],
+  "deep_swe": "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+  "harness": {
+    "pier": "0c802fc067a425345b24d1c69411aa98acf61a1d",
+    "mini_swe_agent": "2.4.6",
+    "mcp": "2.3.0",
+    "agent_step_limit": 500
+  },
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "reasoning_effort": "max"
+  },
+  "context_tokens": 1048576,
+  "concurrency": 32,
+  "verifier_timeout_seconds": 1800,
+  "error_breakdown": {
+    "verifier_timeout": 3,
+    "agent_timeout": 4,
+    "docker_compose_runtime": 1
+  },
+  "comparisons": {
+    "deepseek_vendor_mini_swe_v2": 77.0,
+    "tencent_hy4_self_test_mini_swe_agent": 73.8,
+    "tencent_hy4_reported": 74.9
+  },
+  "notes": [
+    "Uses raw task verifier rewards.",
+    "Intent-to-treat counts all trial errors as failures.",
+    "Complete-case excludes all error trials."
+  ]
+}

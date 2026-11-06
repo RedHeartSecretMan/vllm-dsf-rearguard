@@ -59,6 +59,7 @@ The two scenes above use the same prompt, [rainy-konbini-prompt.md](docs/showcas
 | 1M long requests | 1,047,000-token inputs at C16: 16/16 succeed at 7,865–8,018 input token/s across the three memory settings |
 | Full-model perplexity | 134 windows per configuration; token PPL 2.770433–2.774319 across all 9 |
 | GPQA Diamond | 198 questions; 91.54% mean accuracy over 4 runs |
+| DeepSWE v1.1 | 113 tasks × 8 sweeps; 72.79% Pass@1 |
 | Sustained load | 1M configuration, 30-minute closed loop; 7,940/7,940 requests succeed |
 
 Full data is in [Performance](docs/performance.md); test conditions and coverage are in [Validation](docs/validation.md). The detailed documents are currently written in Chinese.

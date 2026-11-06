@@ -59,6 +59,7 @@ DSF 指 DeepSeek-V4.1-Flash；Rearguard 意为殿后部队。
 | 1M 长请求 | 1,047,000 token 输入、C16 时 16/16 成功，三档水位的输入吞吐为 7,865–8,018 token/s |
 | 全模型 PPL | 9 组配置各 134 个窗口，token PPL 为 2.770433–2.774319 |
 | GPQA Diamond | 198 题，4 轮平均准确率 91.54% |
+| DeepSWE v1.1 | 113 个任务 × 8 轮；Pass@1 72.79% |
 | 持续负载 | 1M 配置 30 分钟闭环测试，7,940/7,940 个请求成功 |
 
 完整数据见[性能与调优](docs/performance.md)，测试条件和覆盖范围见[验证结果](docs/validation.md)。
