@@ -168,6 +168,8 @@ curl http://127.0.0.1:6789/v1/chat/completions \
 | `--chunk` | 建议显式设为 `16384`；`32768` 需要更多显存预留，1M 上下文时需要 `0.95` 水位 |
 | `--no-disable-chunked-mm-input` | 处理大图、多图或视频时开启 |
 | `--mm-encoder-tp-mode` | 默认 `weights` 切分视觉权重。`data` 在各 TP rank 保留完整视觉权重，将图片或视频帧分给各 rank 编码。 |
+| `--dspark-draft-sample-method` | 默认 `greedy`。温度大于 0 的负载可测试 `probabilistic`，并核对 GPU KV 容量。 |
+| `--engram-dp-shared` | 在单节点 TP4/DP2 下共享 Engram 主机表。为共享内存预留 192 GiB，为主机 RAM 预留 200 GiB，并另计 LMCache L1。 |
 | `--responses-store` | 使用 `previous_response_id` 时开启；历史有界保存在当前 API 进程内 |
 | `--experimental` | 可重复传入；快速开始中的 `stacked-kv` 和 `bounded-prefill` 已完成完整测试，其他选项需在目标负载上验证 |
 

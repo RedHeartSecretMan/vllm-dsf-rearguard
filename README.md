@@ -168,6 +168,8 @@ The quick-start configuration is a good first deployment: 1M context, 16K chunk,
 | `--chunk` | Set `16384` explicitly; `32768` needs more memory headroom and requires `0.95` with a 1M context |
 | `--no-disable-chunked-mm-input` | Enable for large images, many images or video |
 | `--mm-encoder-tp-mode` | `weights` (default) shards the vision weights. `data` replicates the vision weights and distributes images or frames across TP ranks. |
+| `--dspark-draft-sample-method` | Use `greedy` by default. Benchmark `probabilistic` for nonzero-temperature requests and check the available GPU KV capacity. |
+| `--engram-dp-shared` | Share the pinned Engram tables on a single-node TP4/DP2 deployment. Budget 192 GiB of shared-memory space and 200 GiB of available RAM plus any LMCache L1. |
 | `--responses-store` | Enable when using `previous_response_id`; history is bounded and kept in the current API process |
 | `--experimental` | Repeatable. `stacked-kv` and `bounded-prefill` from the quick start are fully tested; validate other options on your workload |
 
