@@ -236,6 +236,8 @@ def make_plan(args):
     if args.text_only:
         serve += ["--language-model-only"]
     else:
+        if args.mm_encoder_tp_mode is not None:
+            serve += ["--mm-encoder-tp-mode", args.mm_encoder_tp_mode]
         serve += [
             "--limit-mm-per-prompt",
             '{"image":64,"video":{"count":2,"num_frames":32}}',
@@ -289,6 +291,7 @@ def make_plan(args):
         "context": args.context,
         "kernels": args.kernels,
         "text_only": args.text_only,
+        "mm_encoder_tp_mode": None if args.text_only else (args.mm_encoder_tp_mode or "weights"),
         "disable_chunked_mm_input": args.disable_chunked_mm_input,
         "responses_store": args.responses_store,
         "api_server_count": 1 if args.responses_store else None,
@@ -364,7 +367,13 @@ def parser():
     )
     p.add_argument("--kernels", choices=("control", "optimized"), default="optimized")
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")
-    p.add_argument("--text-only", action="store_true")
+    encoder = p.add_mutually_exclusive_group()
+    encoder.add_argument("--text-only", action="store_true")
+    encoder.add_argument(
+        "--mm-encoder-tp-mode",
+        choices=("weights", "data"),
+        help="Shard vision encoder weights (default) or split media across TP ranks",
+    )
     p.add_argument(
         "--responses-store", action="store_true",
         help="Keep Responses history in one API worker for previous_response_id; disabled by default.",

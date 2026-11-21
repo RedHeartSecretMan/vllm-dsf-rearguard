@@ -194,6 +194,21 @@ class LaunchTests(unittest.TestCase):
         disabled = self.plan("--disable-chunked-mm-input")["command"]
         self.assertIn("--disable-chunked-mm-input", disabled)
 
+    def test_encoder_tp_mode_is_opt_in_and_recorded_in_the_plan(self):
+        baseline = self.plan()
+        self.assertEqual(baseline["mm_encoder_tp_mode"], "weights")
+        self.assertNotIn("--mm-encoder-tp-mode", baseline["command"])
+        for mode in ("weights", "data"):
+            with self.subTest(mode=mode):
+                plan = self.plan("--mm-encoder-tp-mode", mode)
+                command = plan["command"]
+                self.assertEqual(plan["mm_encoder_tp_mode"], mode)
+                self.assertEqual(command[command.index("--mm-encoder-tp-mode") + 1], mode)
+        self.assertIsNone(self.plan("--text-only")["mm_encoder_tp_mode"])
+        with patch("sys.stderr", new=io.StringIO()):
+            with self.assertRaises(SystemExit):
+                launch.parser().parse_args(["/model", "--text-only", "--mm-encoder-tp-mode", "data"])
+
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with patch("sys.stderr", new=io.StringIO()) as stderr:
             with self.assertRaises(SystemExit) as error:
