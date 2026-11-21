@@ -28,8 +28,10 @@ from scripts.quality_metrics import (
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config/benchmarks"
 MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
-# launch.py publishes the service on this host port
-DEFAULT_BASE_URL = "http://127.0.0.1:6789"
+SERVICE_PORT = 6789
+PERFORMANCE_PORT = 6688
+DEFAULT_BASE_URL = f"http://127.0.0.1:{SERVICE_PORT}"
+DEFAULT_PERFORMANCE_BASE_URL = f"http://127.0.0.1:{PERFORMANCE_PORT}"
 NATURE_CORPUS = (
     "A careful engineer reviews the design, measures the system, and records "
     "each result before changing the implementation. Reliable services balance "
@@ -81,7 +83,15 @@ def load_config(name: str) -> dict[str, Any]:
 
 def launch_args(config: dict[str, Any], entry: dict[str, Any]) -> list[str]:
     """Launch arguments of a case or variant: its preset plus its own extras."""
-    return list(config["launch"][entry["launch"]]) + list(entry.get("extra_launch", []))
+    args = [*config["launch"][entry["launch"]], *entry.get("extra_launch", [])]
+    has_port = False
+    for index, arg in enumerate(args):
+        flag, equals, value = arg.partition("=")
+        if flag == "--port":
+            has_port = True
+            if int(value if equals else args[index + 1]) == SERVICE_PORT:
+                raise ValueError(f"Choose a performance test port other than {SERVICE_PORT}")
+    return args if has_port else [*args, "--port", str(PERFORMANCE_PORT)]
 
 
 def verify_endpoint(base, launch):
@@ -128,7 +138,13 @@ def verify_endpoint(base, launch):
     }
 
 
+def require_performance_endpoint(base: str) -> None:
+    if urllib.parse.urlsplit(base).port == SERVICE_PORT:
+        raise ValueError(f"Choose a performance test port other than {SERVICE_PORT}")
+
+
 def require_model(base: str) -> None:
+    require_performance_endpoint(base)
     models = json_request(base, "/v1/models")
     if MODEL not in [row["id"] for row in models["data"]]:
         raise RuntimeError("served model identity is missing")

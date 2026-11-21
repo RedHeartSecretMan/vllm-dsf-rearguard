@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.bench_common import (
-    DEFAULT_BASE_URL,
+    DEFAULT_PERFORMANCE_BASE_URL,
     chat_body,
     completion_body,
     launch_args,
@@ -148,7 +148,7 @@ def measure(base: str, case: dict[str, Any], variant: dict[str, Any], timeout: f
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--base-url", default=DEFAULT_PERFORMANCE_BASE_URL)
     parser.add_argument("--plan", action="store_true", help="print how to start each variant")
     parser.add_argument("--case")
     parser.add_argument("--variant")

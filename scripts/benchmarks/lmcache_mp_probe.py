@@ -461,6 +461,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         args.base_url = loopback_url(args.base_url)
+        bench.require_performance_endpoint(args.base_url)
         args.lmcache_url = loopback_url(args.lmcache_url)
     except ValueError as error:
         parser.error(str(error))

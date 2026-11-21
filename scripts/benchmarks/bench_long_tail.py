@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.bench_common import (
-    DEFAULT_BASE_URL,
+    DEFAULT_PERFORMANCE_BASE_URL,
     MODEL,
     ROOT,
     completion_body,
@@ -463,7 +463,7 @@ def _run_mixed(base: str, case: dict[str, Any], timeout: float) -> dict[str, Any
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--base-url", default=DEFAULT_PERFORMANCE_BASE_URL)
     parser.add_argument("--case", help="case id; omit to list the cases")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=3600)
