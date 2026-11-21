@@ -32,7 +32,7 @@ python3 -m scripts.benchmarks.lmcache_mp_probe \
   --prompt-tokens 20992 --output runtime/lmcache-mp-probe.json
 ```
 
-验收要求 8 个 GPU worker 完成注册，同一文本前缀在 DP0 写入后被 DP1 从外部缓存读出，两次贪心生成的文本 SHA256 一致。Chunk 请求值为 128，实际尺寸以连接器与服务端协商结果为准。做吞吐 A/B 时对照臂保持相同镜像及参数，去掉 `--lmcache-mp` 并加上 `--host-network-ipc`，在两个臂使用同一批请求。多轮真实容量和多模态缓存需要各自的用例和结果。
+验收要求 8 个 GPU worker 完成注册，同一文本前缀在 DP0 写入后被 DP1 从外部缓存读出，两次贪心生成的文本 SHA256 一致。探针从 `/status` 读取每个 chunk 的对象组数，等所有完整输入 chunk 的对象写入 L1 后再发热请求。Chunk 请求值为 128，实际尺寸以连接器与服务端协商结果为准。做吞吐 A/B 时对照臂保持相同镜像及参数，去掉 `--lmcache-mp` 并加上 `--host-network-ipc`，在两个臂使用同一批请求。多轮真实容量和多模态缓存需要各自的用例和结果。
 
 停止试验先停 vLLM，再停 LMCache。大容量 L1 释放锁页需要时间。收到停止超时报错时，先用 `docker inspect` 核对容器状态和显存释放情况，再恢复其他服务。
 

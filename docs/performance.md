@@ -1059,6 +1059,23 @@ C4 与 C16 使用相同 seed，C16 前四个 prompt 与 C4 相同。C16 第一�
 
 </details>
 
+### DSpark 显存与 GPU KV 容量
+
+DSpark k5 从目标层的辅助隐藏状态起草。跳过 MTP 使用的折叠前残差缓冲区后，16,384 token 的调度预算可以释放 `16384 × 4 × 5120 × 2` 字节，即每卡 **640 MiB**。V2 Model Runner 在预热和生成时都支持无 MTP 缓冲区的模型。
+
+2026-11-21 在 8×A100-SXM4-80GB 比较 `7107612` 与 `059c9f6`。两组使用相同的 1017 权重、262K 上下文、TP4/DP2/EP8、16K chunk、0.90 显存水位、k5 greedy、纯文本和 512 GiB LMCache L1。[上游改动](https://github.com/vllm-project/vllm/pull/63996) · [LMCache 配置](lmcache-mp.md)
+
+| 指标 | 对照 | 优化后 | 变化 |
+|---|---:|---:|---:|
+| 模型加载显存，8 卡各自记录 | 47.71 GiB | 47.09 GiB | −0.62 GiB/卡 |
+| 可用 GPU KV 显存，DP0/TP0 | 9.23 GiB | 9.86 GiB | +0.63 GiB |
+| DP0 GPU KV 容量 | 1,828,884 token | 1,954,322 token | +6.86% |
+| DP1 GPU KV 容量 | 1,897,429 token | 2,021,251 token | +6.53% |
+
+表中取各臂首次启动日志。候选重启后各卡的模型加载显存仍为 47.09 GiB。DP0/TP0 的可用 GPU KV 显存为 9.65 GiB，DP0 和 DP1 的容量分别为 1,911,333 和 2,021,251 token。两次候选启动相对对照的 GPU KV 容量增幅为 4.51%～6.86%。
+
+首次验收的 4 对固定文本请求均跨 DP 命中，贪心输出 SHA256 与对照一致。其中一对 20,992 token 请求在尾段 L1 写入完成前开始热读，实际命中 16,256 token。修正探针后，同镜像复验 3 对，每对都在 328 个对象写入后发出热请求，均命中 20,991 token，输出 SHA256 与对照一致。此次对照覆盖显存、GPU KV 容量和文本一致性。
+
 ## 未采用方案
 
 以下方案未进入默认配置：compact MQA 未满足输出一致性和成功率要求；两种 CPU KV offload connector 未通过初始化或请求验证；adaptive DSpark 缺少所需 backend 支持；TP8、logits 分块和 `dummy_q` 初始化方式未显示明确收益。
