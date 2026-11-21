@@ -678,7 +678,7 @@ def summarize(arm, *, enabled):
     reasons = []
     if failed:
         reasons.append("one or more requests failed or were not sent")
-    if late_posts:
+    if mode == "closed" and late_posts:
         reasons.append("POST started outside the admission window")
     if not good:
         reasons.append("no request completed the output contract")
@@ -715,10 +715,8 @@ def summarize(arm, *, enabled):
         if mode == "closed"
         else (output / elapsed if elapsed else None),
         "drained_output_tokens_per_s": output / elapsed if elapsed else None,
-        "full_round_complete_s": (
-            last_completion if not failed and not late_posts else None
-        )
-        if mode == "fixed"
+        "full_round_complete_s": last_completion
+        if mode == "fixed" and not failed
         else None,
         "closed_last_completion_s": last_completion if mode == "closed" else None,
         "latency_s": {

@@ -337,6 +337,31 @@ class ReportCLI(unittest.TestCase):
             report["performance_comparison"]["on_over_off_output_tokens_per_s"], 11 / 9
         )
 
+    def test_fixed_replay_includes_queued_turns_dispatched_during_drain(self):
+        off, on = make_arm(False), make_arm(True)
+        for arm in (off, on):
+            plan = [
+                [
+                    row["chain_id"],
+                    row["turn"],
+                    row["planned_at_s"],
+                    row["request_sha256"],
+                ]
+                for row in arm["rows"]
+            ]
+            arm.update(
+                duration_s=6.0,
+                offered_schedule_sha256=fixture_digest(["fixed", 6.0, plan]),
+            )
+        result = self.report(with_metrics(off), with_metrics(on, external=(0, 96)))
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["arms"]["off"]["late_posts"], 1)
+        self.assertEqual(report["arms"]["off"]["full_round_complete_s"], 11)
+        self.assertAlmostEqual(
+            report["performance_comparison"]["on_over_off_output_tokens_per_s"], 11 / 9
+        )
+
     def test_sidecar_receipt_rejects_a_non_loopback_http_bind(self):
         off, on = make_arm(False), make_arm(True)
         sidecar = on["launch_receipt"]["lmcache_server_command"]
