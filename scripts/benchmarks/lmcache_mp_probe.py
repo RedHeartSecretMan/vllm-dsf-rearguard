@@ -159,6 +159,22 @@ def registered_gpus(status):
     return sorted(ids)
 
 
+def l1_object_groups_per_chunk(status, gpu_ids):
+    group_counts = set()
+    for gpu_id in gpu_ids:
+        context = status["cache_context_meta"][str(gpu_id)]
+        if context["world_size"] != 1:
+            raise ValueError("expected replicated KV object keys for the DSF probe")
+        groups = {
+            group["object_group_idx"]
+            for group in context["kv_cache_layout"]["kernel_groups"]
+        }
+        group_counts.add(len(groups))
+    if len(group_counts) != 1 or 0 in group_counts:
+        raise ValueError("registered GPUs disagree on the number of L1 object groups")
+    return group_counts.pop()
+
+
 def build_prompt(base, headers, count):
     # Repeat one tokenized natural-text prefix so the requested token count is
     # exact and both completions send byte-for-byte identical prompt token IDs.
@@ -330,9 +346,13 @@ def run_probe(args):
         # A final partial chunk cannot be reused. A fully chunk-aligned prompt
         # can also need its last token recomputed, depending on the KV layout.
         reusable_chunks = (args.prompt_tokens - 1) // chunk
+        groups_per_chunk = l1_object_groups_per_chunk(status, initial_gpus)
+        expected_l1_writes = args.prompt_tokens // chunk * groups_per_chunk
         report.update(
             lmcache_chunk_tokens=chunk,
             full_chunks_before_last_token=reusable_chunks,
+            l1_object_groups_per_chunk=groups_per_chunk,
+            expected_cold_l1_writes=expected_l1_writes,
             minimum_warm_external_tokens=chunk,
         )
         if not reusable_chunks:
@@ -356,17 +376,18 @@ def run_probe(args):
 
         report["stage"] = "cold_l1_store"
         started = time.monotonic()
+        # The metric counts objects. Wait for every group of every complete
+        # prompt chunk so an early prefill batch cannot satisfy the gate.
         lm["before_warm"] = poll(
             lmcache_sample,
-            lambda counters: counters["l1_written_keys"] >= reusable_chunks,
+            lambda counters: counters["l1_written_keys"] >= expected_l1_writes,
             args.store_timeout,
         )
         report["store_wait_s"] = time.monotonic() - started
-        # L1 counts committed object keys. Multiple workers/object groups can
-        # contribute keys for one logical chunk, so this is a lower bound.
-        if lm["before_warm"]["l1_written_keys"] < reusable_chunks:
+        completed = lm["before_warm"]["l1_written_keys"]
+        if completed < expected_l1_writes:
             raise ValueError(
-                "did not observe enough completed L1 writes for the cold salt"
+                f"observed {completed}/{expected_l1_writes} completed L1 writes for the cold salt"
             )
         if lm["before_warm"]["loaded_keys"]:
             raise ValueError(

@@ -14,6 +14,7 @@ from scripts import bench_common as bench
 from scripts.benchmarks import lmcache_mp_probe as probe
 
 CHUNK = 128
+OBJECT_GROUPS = 2
 GPU_IDS = list(range(100, 108))
 
 
@@ -61,8 +62,10 @@ class ServiceFixture:
             self.lmcache_scrapes_after_cold += 1
             cold = self.requests[0][1]
             salt = cold["cache_salt"]
-            if self.lmcache_scrapes_after_cold >= 2 and self.fault != "no_store":
-                keys = (len(cold["prompt"]) - 1) // CHUNK
+            if self.fault != "no_store":
+                keys = len(cold["prompt"]) // CHUNK * OBJECT_GROUPS
+                if self.lmcache_scrapes_after_cold == 1:
+                    keys = 254 if self.fault == "slow_tail_store" else 0
                 lines.append(
                     f'lmcache_mp_l1_write_chunks_total{{cache_salt="{salt}"}} {keys}'
                 )
@@ -78,7 +81,23 @@ class ServiceFixture:
             return 404, "redirect was followed"
         if handler.command == "GET" and handler.path == "/status" and lmcache:
             ids = [100] * 8 if self.fault == "duplicate_gpus" else GPU_IDS
-            return 200, json.dumps({"registered_gpu_ids": ids, "chunk_size": CHUNK})
+            layout = {
+                "world_size": 1,
+                "kv_cache_layout": {
+                    "kernel_groups": [
+                        {"object_group_idx": 0},
+                        {"object_group_idx": 0},
+                        {"object_group_idx": 1},
+                    ]
+                },
+            }
+            return 200, json.dumps(
+                {
+                    "registered_gpu_ids": ids,
+                    "chunk_size": CHUNK,
+                    "cache_context_meta": {str(gpu): layout for gpu in ids},
+                }
+            )
         if handler.command == "GET" and handler.path == "/metrics":
             return 200, self.lmcache_metrics() if lmcache else self.vllm_metrics()
         if handler.command == "POST" and not lmcache:
@@ -207,7 +226,7 @@ class ProbeTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     report["lmcache_metrics"]["before_warm"]["l1_written_keys"],
-                    (prompt_tokens - 1) // CHUNK,
+                    prompt_tokens // CHUNK * OBJECT_GROUPS,
                 )
                 self.assertEqual(
                     report["lmcache_metrics"]["after_warm"]["loaded_keys"], 1
@@ -221,6 +240,13 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(cold["cache_salt"], report["cache_salt"])
                 self.assertEqual(len(cold["prompt"]), prompt_tokens)
                 self.assertEqual(cold["temperature"], 0)
+
+    def test_waits_for_all_prompt_objects_after_partial_prefill_store(self):
+        code, report, fixture = self.run_fixture("slow_tail_store", prompt_tokens=20992)
+        self.assertEqual(code, 0, report)
+        self.assertTrue(fixture.store_observed_before_warm)
+        self.assertEqual(report["lmcache_metrics"]["before_warm"]["l1_written_keys"], 328)
+        self.assertEqual(report["completion_post_attempts"], 2)
 
     def test_unverified_requests_write_failure_without_resending(self):
         for fault, stage, attempts in (
