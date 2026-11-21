@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -81,6 +82,10 @@ def _burst_reports(base, workload, variant, timeout):
             bodies = [chat_body(workload["prompt"], workload["osl"]) for _ in prompts]
         else:
             raise ValueError(f"unsupported burst kind: {kind}")
+        if workload.get("cache") == "cold":
+            namespace = uuid.uuid4().hex
+            for index, body in enumerate(bodies):
+                body["cache_salt"] = f"ab-{namespace}-{index}"
         rows, elapsed = run_burst(
             base, bodies, concurrency, timeout, expected_output=workload["osl"]
         )
