@@ -3234,35 +3234,39 @@ class Scheduler(SchedulerInterface):
             ) // self.block_size
 
             if len(block_ids_per_group) > 1:
-                # Hybrid memory allocator: one block-id list per KV cache
-                # group, all at the scheduler (unified) block granularity.
-                # Take the conservative recovery: truncate at the earliest
-                # invalid position across groups and evict each affected
-                # group's suffix from its own first invalid position. The
-                # shared-block optimization below is single-group only.
-                first_invalid: list[int | None] = []
-                for group_block_ids in block_ids_per_group:
-                    found = None
-                    for idx, block_id in zip(
-                        range(req_num_computed_blocks), group_block_ids
-                    ):
-                        if block_id in invalid_block_ids:
-                            found = idx
+                # The scheduler aligns tokens to the LCM, but block tables
+                # use each group's own token span. Flat connector errors can
+                # also include the shared null block used by SWA for old slots.
+                null_block_id = self.kv_cache_manager.block_pool.null_block.block_id
+                managers = self.kv_cache_manager.coordinator.single_type_managers
+                first_invalid_token: int | None = None
+                for group_block_ids, manager in zip(
+                    block_ids_per_group, managers, strict=True
+                ):
+                    group_block_size = manager.block_size
+                    for idx, block_id in enumerate(group_block_ids):
+                        token = idx * group_block_size
+                        if token >= req_num_computed_tokens:
                             break
-                    first_invalid.append(found)
-                hit_indices = [fi for fi in first_invalid if fi is not None]
-                if hit_indices:
-                    min_idx = min(hit_indices)
-                    request.num_computed_tokens = min_idx * self.block_size
+                        if block_id == null_block_id or block_id not in invalid_block_ids:
+                            continue
+                        if first_invalid_token is None or token < first_invalid_token:
+                            first_invalid_token = token
+                        if evict_blocks:
+                            blocks_to_evict.update(group_block_ids[idx:])
+                        break
+                if first_invalid_token is not None:
+                    # A failed async load can leave only the final SWA window
+                    # allocated. An earlier prefix may require recycled pages,
+                    # so restart from a fresh local prefix lookup.
+                    request.num_computed_tokens = (
+                        first_invalid_token // self.block_size * self.block_size
+                        if evict_blocks
+                        else 0
+                    )
                     total_affected_tokens += (
                         req_num_computed_tokens - request.num_computed_tokens
                     )
-                    if evict_blocks:
-                        for fi, group_block_ids in zip(
-                            first_invalid, block_ids_per_group
-                        ):
-                            if fi is not None:
-                                blocks_to_evict.update(group_block_ids[fi:])
                     affected_req_ids.add(req_id)
                 continue
 

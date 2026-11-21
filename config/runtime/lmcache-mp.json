@@ -1,0 +1,7 @@
+{
+  "l1_size_gb": 512,
+  "l1_init_size_gb": 16,
+  "chunk_size": 128,
+  "port": 15555,
+  "http_port": 19180
+}

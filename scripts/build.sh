@@ -16,9 +16,15 @@ revision="$(git rev-parse HEAD)"
 context="$(mktemp -d)"
 trap 'rm -rf -- "$context"' EXIT
 git archive HEAD | tar -xf - -C "$context"
-docker build --network=none --pull=false \
+lmcache_mp="${ENABLE_LMCACHE_MP:-0}"
+case "$lmcache_mp" in
+  0) build_network=none ;;
+  1) build_network=default ;;
+  *) echo 'ENABLE_LMCACHE_MP must be 0 or 1' >&2; exit 1 ;;
+esac
+docker build --network="$build_network" --pull=false \
   --build-arg "BASE_IMAGE=$base_image" --build-arg "SOURCE_REVISION=$revision" \
-  -t "$image" "$context"
+  --build-arg "ENABLE_LMCACHE_MP=$lmcache_mp" -t "$image" "$context"
 image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 # Deliberately omit --gpus: these are source/CPU checks.
 docker run --rm --runtime=runc --network none -e CUDA_VISIBLE_DEVICES= \

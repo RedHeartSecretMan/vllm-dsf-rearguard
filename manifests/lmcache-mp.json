@@ -1,0 +1,22 @@
+{
+  "default_enabled": false,
+  "reference": "https://github.com/RedHeartSecretMan/vllm-dsf-rearguard/issues/1#issuecomment-6816255390",
+  "lmcache_release": "https://github.com/LMCache/LMCache/releases/tag/v0.5.6",
+  "runtime": {
+    "python": "3.12",
+    "architecture": "x86_64",
+    "cuda": "13.0",
+    "packages": {
+      "vllm": "0.13.0",
+      "torch": "2.13.0+cu130",
+      "lmcache": "0.5.6",
+      "grpcio": "1.78.0",
+      "grpcio-observability": "1.78.0",
+      "grpcio-status": "1.78.0"
+    }
+  },
+  "connector": {
+    "kv_connector": "LMCacheMPConnector",
+    "kv_connector_module_path": "lmcache.integration.vllm.lmcache_mp_connector"
+  }
+}
