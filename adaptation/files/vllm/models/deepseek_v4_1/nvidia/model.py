@@ -502,8 +502,12 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             self.norm = PPMissingLayer()
 
         spec_config = vllm_config.speculative_config
-        needs_mtp_hidden_states = spec_config is not None and (
-            spec_config.use_eagle() or spec_config.uses_draft_model()
+        # DSpark uses the target layers' auxiliary states, leaving the
+        # pre-collapse residual buffer for the modes that consume it.
+        needs_mtp_hidden_states = (
+            spec_config is not None
+            and (spec_config.use_eagle() or spec_config.uses_draft_model())
+            and not spec_config.use_dspark()
         )
         if get_pp_group().is_last_rank and needs_mtp_hidden_states:
             self._mtp_hidden_buffer = torch.empty(

@@ -6,7 +6,7 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 31
+      "files": 32
     },
     {
       "name": "model_support",
@@ -135,7 +135,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/model.py",
       "base_sha256": "83c22bcc4c45e37d6da6e69edd9c43188e1baf5c11d486714f650d2777878dfa",
-      "patched_sha256": "47ff28d3279b61d2c5c6a2edc80ac74751f4c41d7a5b3afcf52819a0941d3423",
+      "patched_sha256": "91511e0d9b24216d26e6a5ba24fb41cb9bf6b1db9eeabdfb8c656ae89bd1c84f",
       "stage": "base_integration"
     },
     {
@@ -253,6 +253,12 @@
       "stage": "base_integration"
     },
     {
+      "path": "vllm/v1/worker/gpu/model_runner.py",
+      "base_sha256": "152aa57073aa74bc033388ef3c47277d866adeb9b813d53819b2be8e868c7f26",
+      "patched_sha256": "43a11f927849080aaf6130412e1886e04bae961ba6610bc8dd3c03d331292466",
+      "stage": "base_integration"
+    },
+    {
       "path": "vllm/v1/worker/gpu/spec_decode/autoregressive/speculator.py",
       "base_sha256": "438ec608da8c3c3ade88fdf77b71ba12e38b2c20c37eea6b1c196bbe0815e94a",
       "patched_sha256": "d751cd3745e063861f636d7004b1a53ca614d137107b2ec92eb1a8fe0f696b37",
@@ -309,6 +315,11 @@
       "url": "https://github.com/keplerzip/deepseek-v4.1-flash-1017-a100",
       "commit": "fb846337b3c580d885641e23fe5d201725735010",
       "scope": "guarded SM80 port reference"
+    },
+    {
+      "url": "https://github.com/vllm-project/vllm/pull/63996",
+      "commit": "e7fa26d5c8d94636a4d0525e1a2462cb661ea331",
+      "scope": "skip the MTP residual buffer for DSpark"
     }
   ],
   "encoder_reference": {
