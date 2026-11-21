@@ -6,11 +6,11 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 32
+      "files": 33
     },
     {
       "name": "model_support",
-      "files": 10
+      "files": 11
     },
     {
       "name": "sm80_acceleration",
@@ -22,6 +22,12 @@
       "path": "vllm/_version.py",
       "base_sha256": "8fe922c590c4a22cd3a40f82354eb51bb9d8dba55463dcc9452788b0a5e4e12b",
       "patched_sha256": "9ffe6f749b0f36eef0679ecb1ae44be7ce6ebe597e862baf654056cdd1b44505",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/config/engram.py",
+      "base_sha256": "6604ada7a08890e992a2c450c76798d6620eab7e6f3f8a1b0dc2eea3d98e05a7",
+      "patched_sha256": "958115bf6370a2afe6cd927495cdb930144a6e844ec8a1be0790215e370775d7",
       "stage": "base_integration"
     },
     {
@@ -121,6 +127,12 @@
       "stage": "model_support"
     },
     {
+      "path": "vllm/models/deepseek_v4_1/common/engram.py",
+      "base_sha256": "8faafb768972509b62b14354efa4c99feab3438c24336f9ba447db4840d2bb5d",
+      "patched_sha256": "2a29e2b498c58e27a5544be5fad6dab2cb42bce96efbb62dc0d6bbf284281a4e",
+      "stage": "model_support"
+    },
+    {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
       "patched_sha256": "690963132a9968acabddd08fc6f6ab5790ce7f77a9d3c43b9ed05bf3c05c3281",
@@ -135,7 +147,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/model.py",
       "base_sha256": "83c22bcc4c45e37d6da6e69edd9c43188e1baf5c11d486714f650d2777878dfa",
-      "patched_sha256": "91511e0d9b24216d26e6a5ba24fb41cb9bf6b1db9eeabdfb8c656ae89bd1c84f",
+      "patched_sha256": "3246c15c1704304a15fdaf8e72210007368694d220447ea11ebab471e17d1d11",
       "stage": "base_integration"
     },
     {

@@ -61,8 +61,8 @@ class SourcePayloadTests(unittest.TestCase):
         self.assertEqual(
             stages,
             {
-                "base_integration": 32,
-                "model_support": 10,
+                "base_integration": 33,
+                "model_support": 11,
                 "sm80_acceleration": 4,
             },
         )
@@ -242,6 +242,23 @@ class LaunchTests(unittest.TestCase):
                 self.assertEqual(plan["dspark_draft_sample_method"], method)
         with self.assertRaisesRegex(ValueError, "requires DSpark"):
             self.plan("--dspark", "0", "--dspark-draft-sample-method", "probabilistic")
+
+    def test_engram_shared_storage_changes_only_the_opt_in_config_and_ipc_budget(self):
+        baseline = self.plan()
+        shared = self.plan("--engram-dp-shared")
+        for plan, expected, shm in (
+            (baseline, {"cpu_offload": True}, "64g"),
+            (shared, {"cpu_offload": True, "dp_shared_memory": True}, "256g"),
+        ):
+            command = plan["command"]
+            self.assertEqual(json.loads(command[command.index("--engram-config") + 1]), expected)
+            self.assertEqual(command[command.index("--shm-size") + 1], shm)
+            self.assertEqual(plan["engram_dp_shared"], "dp_shared_memory" in expected)
+        with_lmcache = self.plan("--engram-dp-shared", "--lmcache-mp")
+        self.assertIn("--ipc=host", with_lmcache["command"])
+        self.assertNotIn("--shm-size", with_lmcache["command"])
+        with self.assertRaisesRegex(ValueError, "requires TP4"):
+            self.plan("--engram-dp-shared", "--parallel", "tp8")
 
     def test_new_hotpaths_are_opt_in_and_independently_recorded(self):
         baseline = self.plan()

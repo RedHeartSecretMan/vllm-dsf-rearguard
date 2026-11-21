@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -37,6 +38,10 @@ KV_TRANSFER_CONNECTORS = {
     "OffloadingConnector",
 }
 KV_TRANSFER_ROLES = {"kv_both", "kv_producer", "kv_consumer"}
+# The pinned 1017 tables occupy 188.84 GiB before the backend RAM reserve.
+ENGRAM_SHARED_SHM_GIB = 192
+ENGRAM_SHARED_RAM_GIB = 200
+ENGRAM_SHARED_SHM = "256g"
 
 
 def load_kv_transfer_config(value: str | None) -> dict | None:
@@ -112,6 +117,8 @@ def make_plan(args):
     ):
         raise ValueError("Invalid memory, port, sequence count, or chunk budget")
     tp, dp = (8, 1) if args.parallel == "tp8" else (4, 2)
+    if args.engram_dp_shared and (tp, dp) != (4, 2):
+        raise ValueError("Engram host sharing requires TP4/DP2 on one node")
     if args.max_seqs % dp:
         raise ValueError("Global max-seqs must be divisible by DP")
     per_rank = args.max_seqs // dp
@@ -187,7 +194,8 @@ def make_plan(args):
         "--kv-cache-dtype",
         "fp8_ds_mla",
         "--engram-config",
-        '{"cpu_offload":true}',
+        '{"cpu_offload":true,"dp_shared_memory":true}'
+        if args.engram_dp_shared else '{"cpu_offload":true}',
         "--tokenizer-mode",
         "deepseek_v41",
         "--tool-call-parser",
@@ -271,7 +279,10 @@ def make_plan(args):
         *(
             ["--network=host", "--ipc=host"]
             if host_network_ipc
-            else ["--ipc=private", "--shm-size", "64g", "-p", f"127.0.0.1:{args.port}:8000"]
+            else [
+                "--ipc=private", "--shm-size", ENGRAM_SHARED_SHM if args.engram_dp_shared else "64g",
+                "-p", f"127.0.0.1:{args.port}:8000",
+            ]
         ),
         "--mount",
         f"type=bind,src={model},dst={CONTAINER_MODEL},readonly",
@@ -291,6 +302,7 @@ def make_plan(args):
         "parallel": {"tp": tp, "dp": dp, "ep": 8, "max_global_seqs": args.max_seqs},
         "dspark": args.dspark,
         "dspark_draft_sample_method": args.dspark_draft_sample_method if args.dspark else None,
+        "engram_dp_shared": args.engram_dp_shared,
         "context": args.context,
         "kernels": args.kernels,
         "text_only": args.text_only,
@@ -334,6 +346,10 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("model", type=Path)
     p.add_argument("--parallel", choices=("tp8", "tp4dp2"), default="tp4dp2")
+    p.add_argument(
+        "--engram-dp-shared", action="store_true",
+        help="Share pinned Engram host tables between local TP4/DP2 replicas",
+    )
     p.add_argument(
         "--dspark", type=int, choices=(0, 5), default=5,
         help="Speculative tokens: 0 disables DSpark; 5 enables it (default)",
@@ -432,6 +448,16 @@ def inspect_runtime(image_id: str, script: str) -> dict:
     )
 
 
+def require_engram_capacity(host_ipc: bool, lmcache_gib: int) -> None:
+    if host_ipc and shutil.disk_usage("/dev/shm").free < (ENGRAM_SHARED_SHM_GIB << 30):
+        raise ValueError(f"Engram host sharing needs {ENGRAM_SHARED_SHM_GIB} GiB free in /dev/shm")
+    required_gib = ENGRAM_SHARED_RAM_GIB + lmcache_gib
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:") and int(line.split()[1]) >= (required_gib << 20):
+            return
+    raise ValueError(f"Engram host sharing and the selected L1 budget need {required_gib} GiB of available RAM")
+
+
 def start_plan(args, plan: dict) -> Path:
     require_idle_gpus()
     image_id = json.loads(
@@ -440,6 +466,8 @@ def start_plan(args, plan: dict) -> Path:
     runtime_report = inspect_runtime(image_id, "check_runtime.py")
     plan["source_manifest_sha256"] = require_matching_report(runtime_report, ROOT)
     lmcache = LMCacheMP(**plan["lmcache_mp"]) if plan["lmcache_mp"] else None
+    if plan["engram_dp_shared"]:
+        require_engram_capacity(plan["host_network_ipc"], lmcache.l1_size_gb if lmcache else 0)
     if lmcache:
         plan["lmcache_runtime"] = inspect_runtime(image_id, "scripts/check_lmcache_runtime.py")
         require_l1_capacity(lmcache)
