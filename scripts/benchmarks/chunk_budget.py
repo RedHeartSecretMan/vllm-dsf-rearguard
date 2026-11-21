@@ -91,6 +91,8 @@ def build_workload(
         if cell["kind"] == "text":
             prompt = [rng.choice(pool) for _ in range(cell["isl"])]
             body = completion_body(prompt, cell["osl"], seed)
+            if config.get("return_token_ids"):
+                body["return_token_ids"] = True
         else:
             content = [{"type": "text", "text": (
                 f"Request {salt}. Describe the visible digits and background colors in order. "

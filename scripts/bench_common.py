@@ -165,7 +165,8 @@ def stream_metrics(
     """Parse one SSE response into per-request timing.
 
     ``chat`` selects the chat delta format; otherwise the completions text
-    format is read. TTFT is measured to the first chunk that carries output.
+    format is read. TTFT is measured to the first chunk that carries output
+    text or, for completions with token IDs enabled, generated token IDs.
     """
     first = last = None
     events: list[float] = []
@@ -211,9 +212,12 @@ def stream_metrics(
                     or delta.get("reasoning_content")
                     or delta.get("tool_calls")
                 )
-            elif choice.get("text"):
-                output_parts.append(choice["text"])
-                produced = True
+            else:
+                text = choice.get("text")
+                if text:
+                    output_parts.append(text)
+                # Byte-fallback tokens may produce no visible text on their own.
+                produced = bool(text or choice.get("token_ids"))
             if produced:
                 now = clock()
                 first = now if first is None else first

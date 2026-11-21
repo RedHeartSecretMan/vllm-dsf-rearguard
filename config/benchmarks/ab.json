@@ -404,6 +404,7 @@
       "workload": {
         "repeats": 3,
         "seed": 1017,
+        "return_token_ids": true,
         "cells": [
           {"id": "text_64k_1_c1", "kind": "text", "isl": 65536, "osl": 1, "concurrency": 1},
           {"id": "text_260k_1_c1", "kind": "text", "isl": 260016, "osl": 1, "concurrency": 1},

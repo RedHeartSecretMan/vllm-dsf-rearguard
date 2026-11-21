@@ -357,6 +357,18 @@ class StreamingMetricTests(unittest.TestCase):
         self.assertEqual(result["cached_tokens"], 0)
         self.assertAlmostEqual(result["tpot_s"], result["decode_span_s"] / 9)
 
+    def test_token_id_counts_as_completion_output_without_visible_text(self):
+        stream = io.BytesIO(
+            b'data: {"choices":[{"text":"","prompt_token_ids":[1,2],"token_ids":[]}] }\n'
+            b'data: {"choices":[{"text":"","token_ids":[190],"finish_reason":"length"}]}\n'
+            b'data: {"choices":[],"usage":{"completion_tokens":1,"prompt_tokens":2,'
+            b'"prompt_tokens_details":{"cached_tokens":0}}}\n'
+            b'data: [DONE]\n'
+        )
+        result = stream_metrics(stream, 0, False, expected_output=1, clock=iter([3, 4]).__next__)
+        self.assertEqual((result["output_tokens"], result["chunks"], result["output_chars"]), (1, 1, 0))
+        self.assertEqual(result["ttft_s"], 3)
+
     def test_missing_done_and_usage_cannot_pass(self):
         stream = io.BytesIO(
             b'data: {"choices":[{"text":"abc","finish_reason":"length"}]}\n'
