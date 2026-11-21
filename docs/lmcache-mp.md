@@ -50,4 +50,41 @@ docker stop --time 180 dsf-lmcache-test-lmcache
 | 2,049 | 1 | 2,048 | 2.485 / 1.707 s |
 | 20,992 | 3 | 20,991 | 1.756 / 0.460 s |
 
-每对使用同一输入和盐值输出 8 个 token。4 对均通过逐引擎外部命中、LMCache 读回计数及文本 SHA256 校验。以上时间是同一服务的冷、热请求配对观察。有无缓存的吞吐和多轮并发容量需要用固定回放另行测量。
+每对使用同一输入和盐值输出 8 个 token。4 对均通过逐引擎外部命中、LMCache 读回计数及文本 SHA256 校验。以上时间是同一服务的冷、热请求配对观察。
+
+## 1M 多轮回放
+
+用相同的镜像和模型权重依次启动两组服务。两组使用 TP4/DP2/EP8、1,048,576 token 上限、0.925 显存水位、16K chunk、DSpark k5、`stacked-kv`、`bounded-prefill`、`prefill-throttle` 和多模态分块。服务绑定 `127.0.0.1:16688`，两组都传 `--host-network-ipc`，开启臂额外传 `--lmcache-mp`。保留各组实际启动回执。
+
+先生成固定到达和闭环工作集。工作集按 [Issue #1 的汇总长度](https://github.com/RedHeartSecretMan/vllm-dsf-rearguard/issues/1#issuecomment-6816255390) 构造合成 token 序列，链内输入逐轮扩展。每轮回放生成独立缓存命名空间，链内请求共用盐值。输入长度与输出预算固定，采样温度为 0。
+
+```bash
+python3 -m scripts.benchmarks.lmcache_replay prepare \
+  --users 16 --turns 3 --seed 42 --output runtime/fixed-workload.json
+python3 -m scripts.benchmarks.lmcache_replay prepare \
+  --users 70 --turns 3 --seed 42 --output runtime/closed-workload.json
+```
+
+服务就绪后，对每组执行以下回放。`$ARM` 为 `off` 或 `on`。固定回放按 3 轮重复，逐轮更换 `--run-key` 和输出文件名。`$LAUNCH_RECEIPT` 指向当前容器的实际启动回执。
+
+```bash
+python3 -m scripts.benchmarks.lmcache_replay run \
+  --mode fixed --workload runtime/fixed-workload.json --duration 180 \
+  --base-url http://127.0.0.1:16688 --launch-receipt "$LAUNCH_RECEIPT" \
+  --run-key fixed-1 --output "runtime/$ARM-fixed-1.json"
+python3 -m scripts.benchmarks.lmcache_replay run \
+  --mode closed --workload runtime/closed-workload.json --duration 600 \
+  --base-url http://127.0.0.1:16688 --launch-receipt "$LAUNCH_RECEIPT" \
+  --run-key closed-70 --output "runtime/$ARM-closed-70.json"
+```
+
+固定到达保留同链串行等待，吞吐覆盖全部请求完成所需的墙钟。闭环在第 600 秒停止发新请求，主吞吐只统计窗口内完整响应的输出 token，另记录排空。每条请求最多发送一次，整次请求的默认截止时间为 600 秒。
+
+```bash
+python3 -m scripts.benchmarks.lmcache_replay_report \
+  runtime/off-fixed-1.json runtime/on-fixed-1.json --output runtime/compare-fixed-1.json
+python3 -m scripts.benchmarks.lmcache_replay_report \
+  runtime/off-closed-70.json runtime/on-closed-70.json --output runtime/compare-closed-70.json
+```
+
+报告以实际启动参数和请求证据校验可比性。用 `arrival_ttft` 和 `arrival_e2e` 查看含客户端排队的延迟。`cache.external_prompt_tokens` 取逐 DP 的 `external_kv_transfer` 计数，API 的 `cached_tokens` 和外部查询命中另列。
