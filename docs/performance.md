@@ -1078,6 +1078,21 @@ DSpark k5 从目标层的辅助隐藏状态起草。跳过 MTP 使用的折叠�
 
 首次验收的 4 对固定文本请求均跨 DP 命中，贪心输出 SHA256 与对照一致。其中一对 20,992 token 请求在尾段 L1 写入完成前开始热读，实际命中 16,256 token。修正探针后，同镜像复验 3 对，每对都在 328 个对象写入后发出热请求，均命中 20,991 token，输出 SHA256 与对照一致。此次对照覆盖显存、GPU KV 容量和文本一致性。
 
+### SM80 自适应校验实验
+
+独立分支 `perf-sm80-adaptive-candidate` 的提交 `671f4c9` 为 1017 的 SM80 DSpark k5 接入设备侧变长校验。先在单卡 A100 上用 V4.1 indexer、Triton paged MQA 和 `persistent_topk` 验证 CR1 / CR2 的分界、padding、跨页和同一张 CUDA Graph 的回放，再在八卡上测整模。
+
+整模对照使用镜像 `sha256:fca171a4f1624389c336288216ab9843e1683323159a6993c6244a7e20edfcf1`、1M / 0.925 / 16K 和 TP4/DP2/EP8。两臂共同关闭 fused Markov、indexer query sharding、SM80 candidate MQA 和 prefill throttle，并使用相同的冷 KV 请求。用 `--sm80-adaptive control` 和 `--sm80-adaptive candidate` 选择两臂。每项为 3 轮中位数。
+
+| 负载 | 固定校验输出 token/s | 自适应输出 token/s | 变化 |
+|---|---:|---:|---:|
+| 温度 0，C1，ISL 128 / OSL 32 | 74.89 | 71.54 | −4.47% |
+| 温度 0.7，C1，ISL 128 / OSL 96 | 59.95 | 57.03 | −4.87% |
+| 温度 0.7，C64，ISL 1024 / OSL 96 | 555.87 | 822.33 | +47.94% |
+| 温度 0.7，C256，ISL 1024 / OSL 96 | 723.15 | 1130.23 | +56.29% |
+
+两臂各通过 8 项语义检查，7 对输出摘要一致。日志记录了设备侧部分裁剪，例如保留 160 个预定 draft 行中的 16 行。每 DP 的 GPU KV 容量为 2,445,229 / 2,431,258 token。当前性能数据对应隔离实验配置。自适应候选保留在实验分支，现有生产调优组合的协同验收另行记录。
+
 ### Engram 同机 DP 共享
 
 `--engram-dp-shared` 让两个 DP 副本中的同一 TP rank 映射同一份 Engram 主机表。TP4/DP2 在 48 上形成四对共享组。每组的低 rank 写入 FP8 权重和 E8M0 scale，整模型加载结束时确认两张表已就绪。
