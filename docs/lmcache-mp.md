@@ -5,7 +5,7 @@
 ## 准备
 
 - 使用和默认部署相同的固定基础镜像及 1017 权重校验流程。开启 LMCache 的镜像额外安装固定版本的 LMCache 0.5.6 及其依赖，检查 wheel 的 SHA256 和混合 KV 连接器的导入。
-- [默认配置](../config/runtime/lmcache-mp.json) 使用 512 GiB L1 上限，启动分配 16 GiB，按需增长。L1 按 LRU 淘汰，不配置 L2。vLLM 启动前检查主机可用内存至少覆盖 L1 上限。实际部署还应留出 Engram 主机权重和系统内存。服务重启后 L1 为空。
+- [默认配置](../config/runtime/lmcache-mp.json) 使用 512 GiB L1，先锁页 16 GiB，再由 LMCache 在后台逐段锁页至 512 GiB。主机内存按完整 L1 和 Engram 权重一起预算。L1 按 LRU 淘汰，不配置 L2。启动前检查主机可用内存至少覆盖 L1 上限。服务重启后 L1 为空。
 - 两个容器共享主机网络和 IPC。vLLM API、LMCache ZMQ 和 LMCache HTTP 都绑定 `127.0.0.1`。两个容器由同一镜像启动，确保 CUDA IPC 两端使用相同的 LMCache 版本。项目通过外部模块路径选择支持混合 KV 的连接器，并保留各组的独立对象。
 
 ```bash
@@ -32,11 +32,22 @@ python3 -m scripts.benchmarks.lmcache_mp_probe \
   --prompt-tokens 20992 --output runtime/lmcache-mp-probe.json
 ```
 
-验收要求 8 个 GPU worker 完成注册，同一文本前缀在 DP0 写入后被 DP1 从外部缓存读出，两次生成的 token 一致。Chunk 请求值为 128，实际尺寸以连接器与服务端协商结果为准。做吞吐 A/B 时对照臂保持相同镜像及参数，去掉 `--lmcache-mp` 并加上 `--host-network-ipc`，在两个臂使用同一批请求。多轮真实容量和多模态缓存需要各自的用例和结果。
+验收要求 8 个 GPU worker 完成注册，同一文本前缀在 DP0 写入后被 DP1 从外部缓存读出，两次贪心生成的文本 SHA256 一致。Chunk 请求值为 128，实际尺寸以连接器与服务端协商结果为准。做吞吐 A/B 时对照臂保持相同镜像及参数，去掉 `--lmcache-mp` 并加上 `--host-network-ipc`，在两个臂使用同一批请求。多轮真实容量和多模态缓存需要各自的用例和结果。
 
-停止试验先停 vLLM，再停 LMCache。容器身份可从启动回执核对。
+停止试验先停 vLLM，再停 LMCache。大容量 L1 释放锁页需要时间。收到停止超时报错时，先用 `docker inspect` 核对容器状态和显存释放情况，再恢复其他服务。
 
 ```bash
-docker stop dsf-lmcache-test
-docker stop dsf-lmcache-test-lmcache
+docker stop --time 90 dsf-lmcache-test
+docker stop --time 180 dsf-lmcache-test-lmcache
 ```
+
+## 8×A100 文本验收
+
+2026-11-21 在 8×A100-SXM4-80GB 上用提交 `7107612` 及镜像 `sha256:5b017f6bfc8a878ba20b342dd36163a066f5ebef4919c560e04752a2fae5272c` 运行。配置为 1017 权重、262K、16K prefill chunk、0.90 显存水位、TP4/DP2/EP8、DSpark k5 和纯文本输入。服务端确认 L1 完成锁页 512 GiB，无 L2，8 个 worker 注册，协商后的 KV chunk 为 128 token。
+
+| 输入 token | 配对轮数 | DP1 外部命中 token | DP0 冷 / DP1 热首 token 延迟中位数 |
+|---:|---:|---:|---:|
+| 2,049 | 1 | 2,048 | 2.485 / 1.707 s |
+| 20,992 | 3 | 20,991 | 1.756 / 0.460 s |
+
+每对使用同一输入和盐值输出 8 个 token。4 对均通过逐引擎外部命中、LMCache 读回计数及文本 SHA256 校验。以上时间是同一服务的冷、热请求配对观察。有无缓存的吞吐和多轮并发容量需要用固定回放另行测量。
