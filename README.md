@@ -167,6 +167,7 @@ The quick-start configuration is a good first deployment: 1M context, 16K chunk,
 | `--memory` | Start at `0.90`; if you need more KV capacity, validate `0.925` or `0.95` on your workload |
 | `--chunk` | Set `16384` explicitly; `32768` needs more memory headroom and requires `0.95` with a 1M context |
 | `--no-disable-chunked-mm-input` | Enable for large images, many images or video |
+| `--mm-encoder-tp-mode` | `weights` (default) shards the vision weights. `data` replicates the vision weights and distributes images or frames across TP ranks. |
 | `--responses-store` | Enable when using `previous_response_id`; history is bounded and kept in the current API process |
 | `--experimental` | Repeatable. `stacked-kv` and `bounded-prefill` from the quick start are fully tested; validate other options on your workload |
 

@@ -167,6 +167,7 @@ curl http://127.0.0.1:6789/v1/chat/completions \
 | `--memory` | 从 `0.90` 开始；需要更大 KV 容量时，再在目标负载上验证 `0.925` 或 `0.95` |
 | `--chunk` | 建议显式设为 `16384`；`32768` 需要更多显存预留，1M 上下文时需要 `0.95` 水位 |
 | `--no-disable-chunked-mm-input` | 处理大图、多图或视频时开启 |
+| `--mm-encoder-tp-mode` | 默认 `weights` 切分视觉权重。`data` 在各 TP rank 保留完整视觉权重，将图片或视频帧分给各 rank 编码。 |
 | `--responses-store` | 使用 `previous_response_id` 时开启；历史有界保存在当前 API 进程内 |
 | `--experimental` | 可重复传入；快速开始中的 `stacked-kv` 和 `bounded-prefill` 已完成完整测试，其他选项需在目标负载上验证 |
 
