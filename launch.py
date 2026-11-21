@@ -135,6 +135,8 @@ def make_plan(args):
     )
     if "stacked-kv" in selected and not args.dspark:
         raise ValueError("stacked-kv requires DSpark")
+    if args.dspark_draft_sample_method == "probabilistic" and not args.dspark:
+        raise ValueError("Probabilistic drafting requires DSpark")
     for experiment, variable in EXPERIMENTS.items():
         env[variable] = "1" if experiment in selected else "0"
     # NVSwitch hosts let NCCL choose its algorithms; "ring" pins them.
@@ -220,10 +222,10 @@ def make_plan(args):
                 {
                     "method": "dspark",
                     "num_speculative_tokens": args.dspark,
-                    "draft_sample_method": "greedy",
+                    "draft_sample_method": args.dspark_draft_sample_method,
                     "rejection_sample_method": "standard",
                     "enable_adaptive_verification": False,
-                    "use_local_argmax_reduction": True,
+                    "use_local_argmax_reduction": args.dspark_draft_sample_method == "greedy",
                 }
             ),
         ]
@@ -288,6 +290,7 @@ def make_plan(args):
         "experimental": sorted(selected),
         "parallel": {"tp": tp, "dp": dp, "ep": 8, "max_global_seqs": args.max_seqs},
         "dspark": args.dspark,
+        "dspark_draft_sample_method": args.dspark_draft_sample_method if args.dspark else None,
         "context": args.context,
         "kernels": args.kernels,
         "text_only": args.text_only,
@@ -334,6 +337,10 @@ def parser():
     p.add_argument(
         "--dspark", type=int, choices=(0, 5), default=5,
         help="Speculative tokens: 0 disables DSpark; 5 enables it (default)",
+    )
+    p.add_argument(
+        "--dspark-draft-sample-method", choices=("greedy", "probabilistic"),
+        default="greedy", help="Choose how DSpark samples draft tokens",
     )
     p.add_argument(
         "--context", type=int, choices=(262144, 524288, 1048576), default=262144

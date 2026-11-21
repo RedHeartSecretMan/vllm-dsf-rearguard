@@ -224,6 +224,25 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(launch.parser().parse_args(["/model"]).dspark, 5)
         self.assertNotIn("--speculative-config", self.plan("--dspark", "0")["command"])
 
+    def test_dspark_probabilistic_drafting_keeps_standard_verification(self):
+        control = self.plan()
+        candidate = self.plan("--dspark-draft-sample-method", "probabilistic")
+        for plan, method, local_argmax in (
+            (control, "greedy", True), (candidate, "probabilistic", False),
+        ):
+            with self.subTest(method=method):
+                command = plan["command"]
+                config = json.loads(command[command.index("--speculative-config") + 1])
+                self.assertEqual(config, {
+                    "method": "dspark", "num_speculative_tokens": 5,
+                    "draft_sample_method": method, "rejection_sample_method": "standard",
+                    "enable_adaptive_verification": False,
+                    "use_local_argmax_reduction": local_argmax,
+                })
+                self.assertEqual(plan["dspark_draft_sample_method"], method)
+        with self.assertRaisesRegex(ValueError, "requires DSpark"):
+            self.plan("--dspark", "0", "--dspark-draft-sample-method", "probabilistic")
+
     def test_new_hotpaths_are_opt_in_and_independently_recorded(self):
         baseline = self.plan()
         self.assertEqual(baseline["experimental"], [])
