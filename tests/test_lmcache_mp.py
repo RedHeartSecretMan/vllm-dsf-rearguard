@@ -83,7 +83,10 @@ class LMCacheMPPlanTests(unittest.TestCase):
                 "require_idle_gpus": Mock(),
                 "inspect_runtime": Mock(return_value={"status": "PASS"}),
                 "require_matching_report": Mock(return_value="sources"),
-                "require_receipt": Mock(),
+                "require_receipt": Mock(return_value={
+                    "revision": "fixture-revision",
+                    "manifest_sha256": "fixture-manifest",
+                }),
                 "require_l1_capacity": Mock(),
                 "require_free_ports": Mock(),
                 "wait_for_health": Mock(side_effect=TimeoutError("dead sidecar")),
@@ -102,3 +105,7 @@ class LMCacheMPPlanTests(unittest.TestCase):
             record = json.loads(receipt.read_text())
             self.assertEqual(record["lmcache_container_id"], "created-sidecar")
             self.assertNotIn("container_id", record)
+            self.assertEqual(record["model_revision"], "fixture-revision")
+            self.assertEqual(record["model_manifest_sha256"], "fixture-manifest")
+            sidecar_command = record["lmcache_server_command"]
+            self.assertEqual(sidecar_command[sidecar_command.index("server") - 1], "sha256:fixture")

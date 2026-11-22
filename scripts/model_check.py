@@ -103,6 +103,7 @@ def require_receipt(model, receipt_path, manifest_path=MANIFEST):
         # A stat-only receipt therefore cannot establish checkpoint identity.
         if sha256(path) != expected["sha256"] or row["signature"] != signature(path):
             raise ValueError("Model changed since verification: " + expected["path"])
+    return receipt
 
 
 def main():

@@ -46,9 +46,15 @@ def main() -> int:
     parser.add_argument("--label", required=True)
     parser.add_argument("--result-dir", type=Path, required=True)
     parser.add_argument("--official", action="store_true")
+    parser.add_argument(
+        "--draft-method",
+        choices=("greedy", "probabilistic"),
+        default="greedy",
+        help="Use greedy for deterministic temperature-0 cases or probabilistic for a separate nonzero-temperature suite.",
+    )
     args = parser.parse_args()
 
-    command = make_command(args.image, args.name, args.volume, args.official, "probabilistic")
+    command = make_command(args.image, args.name, args.volume, args.official, args.draft_method)
     container = subprocess.check_output(command, text=True).strip()
     args.result_dir.mkdir(parents=True, exist_ok=True)
     report = {

@@ -22,9 +22,15 @@ case "$lmcache_mp" in
   1) build_network=default ;;
   *) echo 'ENABLE_LMCACHE_MP must be 0 or 1' >&2; exit 1 ;;
 esac
+kv_only_native="${ENABLE_KV_ONLY_NATIVE:-0}"
+case "$kv_only_native" in
+  0|1) ;;
+  *) echo 'ENABLE_KV_ONLY_NATIVE must be 0 or 1' >&2; exit 1 ;;
+esac
 docker build --network="$build_network" --pull=false \
   --build-arg "BASE_IMAGE=$base_image" --build-arg "SOURCE_REVISION=$revision" \
-  --build-arg "ENABLE_LMCACHE_MP=$lmcache_mp" -t "$image" "$context"
+  --build-arg "ENABLE_LMCACHE_MP=$lmcache_mp" \
+  --build-arg "ENABLE_KV_ONLY_NATIVE=$kv_only_native" -t "$image" "$context"
 image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 # Deliberately omit --gpus: these are source/CPU checks.
 docker run --rm --runtime=runc --network none -e CUDA_VISIBLE_DEVICES= \

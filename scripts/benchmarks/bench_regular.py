@@ -31,6 +31,18 @@ from scripts.bench_common import (
 )
 
 
+def _require_cold(report: dict[str, Any]) -> dict[str, Any]:
+    """Reject prefix-cache hits in formal regular benchmark cells."""
+    good = [row for row in report["requests"] if row["status"] == "PASS"]
+    report["cache_requested"] = "cold"
+    report["cache_verified"] = bool(good) and all(
+        row.get("cached_tokens") == 0 for row in good
+    )
+    if not report["cache_verified"]:
+        report["status"] = "FAIL"
+    return report
+
+
 def cell_seed(case: dict[str, Any], concurrency: int) -> int:
     """Seed for one concurrency cell.
 
@@ -54,10 +66,16 @@ def run_matrix(base: str, case: dict[str, Any], timeout: float) -> list[dict[str
                 prompts = build_prompts(base, dataset, isl, concurrency, seed)
                 # Warm one request for the current graph/shape; it is not reported.
                 warm = build_prompts(base, dataset, isl, 1, seed + 1000000)[0]
-                stream_request(
-                    base, completion_body(warm, min(case["osl"], 2), seed), timeout
-                )
-                bodies = [completion_body(p, case["osl"], seed) for p in prompts]
+                warm_body = completion_body(warm, min(case["osl"], 2), seed)
+                warm_body["cache_salt"] = f"regular:{case['id']}:{dataset}:{isl}:{concurrency}:warm"
+                stream_request(base, warm_body, timeout)
+                bodies = []
+                for index, prompt in enumerate(prompts):
+                    body = completion_body(prompt, case["osl"], seed)
+                    body["cache_salt"] = (
+                        f"regular:{case['id']}:{dataset}:{isl}:{concurrency}:{index}"
+                    )
+                    bodies.append(body)
                 rows, elapsed = run_burst(
                     base, bodies, concurrency, timeout, expected_output=case["osl"]
                 )
@@ -72,7 +90,7 @@ def run_matrix(base: str, case: dict[str, Any], timeout: float) -> list[dict[str
                     seed=seed,
                 )
                 report["workload_sha256"] = workload_digest(prompts)
-                reports.append(report)
+                reports.append(_require_cold(report))
     return reports
 
 
@@ -82,21 +100,24 @@ def run_chat_burst(base: str, case: dict[str, Any], timeout: float) -> list[dict
     for run in case["runs"]:
         concurrency = run["concurrency"]
         prompt = case["prompt"].format(n=concurrency)
-        bodies = [
-            chat_body(prompt, case["osl"], thinking=case["thinking"])
-            for _ in range(concurrency)
-        ]
+        bodies = []
+        for index in range(concurrency):
+            body = chat_body(prompt, case["osl"], thinking=case["thinking"])
+            body["cache_salt"] = f"regular:{case['id']}:c{concurrency}:{index}"
+            bodies.append(body)
         rows, elapsed = run_burst(
             base, bodies, concurrency, timeout, expected_output=case["osl"]
         )
         reports.append(
-            summarize(
-                rows,
-                elapsed,
-                case=case["id"],
-                concurrency=concurrency,
-                osl=case["osl"],
-                max_seqs=run.get("max_seqs"),
+            _require_cold(
+                summarize(
+                    rows,
+                    elapsed,
+                    case=case["id"],
+                    concurrency=concurrency,
+                    osl=case["osl"],
+                    max_seqs=run.get("max_seqs"),
+                )
             )
         )
     return reports
@@ -107,15 +128,19 @@ def run_chat_prefill(base: str, case: dict[str, Any], timeout: float) -> list[di
     reports = []
     for repeats in case["repeats"]:
         text = repeated_text(case["word"], repeats, f"prefill_{repeats // 1000}k")
+        body = chat_body(text, case["osl"], thinking=case["thinking"])
+        body["cache_salt"] = f"regular:{case['id']}:repeats{repeats}"
         rows, elapsed = run_burst(
             base,
-            [chat_body(text, case["osl"], thinking=case["thinking"])],
+            [body],
             1,
             timeout,
             expected_output=case["osl"],
         )
         reports.append(
-            summarize(rows, elapsed, case=case["id"], repeats=repeats, osl=case["osl"])
+            _require_cold(
+                summarize(rows, elapsed, case=case["id"], repeats=repeats, osl=case["osl"])
+            )
         )
     return reports
 

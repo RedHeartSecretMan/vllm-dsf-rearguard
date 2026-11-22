@@ -494,17 +494,22 @@ def start_plan(args, plan: dict) -> Path:
     lmcache = LMCacheMP(**plan["lmcache_mp"]) if plan["lmcache_mp"] else None
     if plan["engram_dp_shared"]:
         require_engram_capacity(plan["host_network_ipc"], lmcache.l1_size_gb if lmcache else 0)
+    model_receipt = require_receipt(args.model, args.receipt)
+    plan["model_revision"] = model_receipt["revision"]
+    plan["model_manifest_sha256"] = model_receipt["manifest_sha256"]
     if lmcache:
         plan["lmcache_runtime"] = inspect_runtime(image_id, "scripts/check_lmcache_runtime.py")
         require_l1_capacity(lmcache)
         require_free_ports((args.port, lmcache.port, lmcache.http_port))
-        plan["lmcache_server_command"] = lmcache.server_command(f"{args.name}-lmcache", image_id)
     elif plan["host_network_ipc"]:
         require_free_ports((args.port,))
-    require_receipt(args.model, args.receipt)
     require_idle_gpus()
     plan["command"][plan["command"].index(args.image)] = image_id
     plan["image_id"] = image_id
+    if lmcache:
+        plan["lmcache_server_command"] = lmcache.server_command(
+            f"{args.name}-lmcache", image_id
+        )
     destination = (
         ROOT / "runtime" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     )

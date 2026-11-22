@@ -293,6 +293,17 @@ class RecordedParameterTests(unittest.TestCase):
 
 
 class CapacityAndKvTransferTests(unittest.TestCase):
+    def test_regular_reports_require_cold_cache(self):
+        report = {
+            "status": "PASS",
+            "requests": [
+                {"status": "PASS", "cached_tokens": 0},
+                {"status": "PASS", "cached_tokens": 2},
+            ],
+        }
+        self.assertFalse(bench_regular._require_cold(report)["cache_verified"])
+        self.assertEqual(report["status"], "FAIL")
+
     def test_long_request_capacity_uses_one_seed_per_concurrency(self):
         cases = {c["id"]: c for c in load_config("regular")["cases"]}
         case = cases["long_request_capacity"]

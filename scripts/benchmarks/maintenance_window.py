@@ -32,13 +32,24 @@ def digest(value: Any) -> str:
 
 
 def control_identity(
-    *, experiment: str, baseline_image: str, launch: dict[str, Any]
+    *,
+    experiment: str,
+    baseline_image: str,
+    launch: dict[str, Any],
+    workload: Any = None,
+    seed: int | str | None = None,
+    concurrency: int | str | None = None,
+    cache_strategy: str | None = None,
 ) -> dict[str, Any]:
     """Build the exact identity required before reusing a control result."""
     return {
         "experiment": experiment,
         "baseline_image": baseline_image,
         "launch_sha256": digest(launch),
+        "workload_sha256": digest(workload) if workload is not None else None,
+        "seed": seed,
+        "concurrency": concurrency,
+        "cache_strategy": cache_strategy,
     }
 
 
