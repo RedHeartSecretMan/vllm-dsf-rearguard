@@ -1165,6 +1165,8 @@ DSpark k5 从目标层的辅助隐藏状态起草。跳过 MTP 使用的折叠�
 
 两臂各通过 8 项文本、工具和图文语义验收，6 对输出摘要一致。每卡模型加载显存为 47.38 / 47.43 GiB。每个 DP 的 GPU KV 容量由 3,760,272 降至 3,374,883 token，降幅 10.25%。启动器默认使用 `greedy`。概率式起草可用于温度大于 0 的负载，启用前按目标并发检查 KV 容量。
 
+2026-11-22 在同一镜像、同一 1017 权重、同一 1M / 0.925 / 16K / TP4/DP2/EP8 配置上复跑三轮。两臂均通过质量验收。概率式起草在温度 0.7 的 C64 / C256 输出吞吐分别为 **711.12 / 891.86 token/s**，greedy 为 **626.09 / 787.26 token/s**，变化为 **+13.58% / +13.29%**；TPOT P95 从 **81.61 / 289.83 ms** 降至 **69.11 / 250.59 ms**。C1 的温度 0 greedy 对照为 **75.61 token/s**，概率式起草为 **73.39 token/s**，因此低并发贪心请求不切换该模式。接受 token/次起草在温度 0.7 的 C64 / C256 从 **0.415 / 0.384** 提高到 **0.738 / 0.742**。本轮原始采样与质量回执见 [DSpark A/B 证据](../runtime/48-next-perf-20261122/dspark-ab/summary.json)。
+
 ### 视觉编码器并行模式
 
 `--mm-encoder-tp-mode weights` 在 TP 组内切分视觉权重。`data` 在每个 TP rank 加载完整视觉权重，并分发图片或视频帧进行编码。启动器默认使用 `weights`。
@@ -1203,6 +1205,28 @@ DSpark k5 从目标层的辅助隐藏状态起草。跳过 MTP 使用的折叠�
 | compact candidate-MQA | 1M 配置，C256，ISL 16384 | 112/256 成功，失败率 56.25% | 不满足精度准入 |
 | `SimpleCPUOffloadConnector`，`cpu_bytes_to_use=8 GiB` | 1M 上限，未开启 `bounded-prefill`，启动后连续发送两个 ISL 1024 的随机请求 | 启动通过，但请求返回 HTTP 500，服务进程崩溃 | 请求失败 |
 | `OffloadingConnector`，`blocks_per_chunk=1` | 1M 上限，未开启 `bounded-prefill`，启动 | `tokens_per_block=8` 不能被 `tokens_per_hash=32` 整除 | 启动失败 |
-| 自适应 DSpark（`enable_adaptive_verification`） | 1M 配置，启动 | indexer backend 不支持在 device 上裁剪 verification 请求 | 启动失败 |
+| 自适应 DSpark（`enable_adaptive_verification`） | 1M 配置，scoped query-boundary patch 与 GPU C1/C16/C64/C128 A/B | authoritative GPU query_start_loc 回写 CPU metadata，9 项 bundled Python 回归通过；C16 总吞吐中位数 `4668.30 -> 6721.38`，C64 `9777.22 -> 7009.75`，C128 `15360.45 -> 13114.55` | 收益随并发不稳定，暂不进入默认配置 |
+| DSpark context KV-only insert | 1M / 0.925 / 16K，Python gate 和 CPU contract | 默认镜像继续安全回退；候选镜像 `kv-only-20261122b` 已完成 `sm_80` native 编译、op 注册、项目测试和 hotpath 检查 | GPU A/B 尚未形成完整可采纳结果 |
+
+### 维护窗与 control 复用
+
+48 的 8 卡 A/B 使用一次性维护窗。先停止生产容器并写入窗口状态，随后在 `127.0.0.1:6688` 连续运行 control 和 candidate。单臂结束只停止测试容器，窗口关闭步骤才恢复记录中的生产容器并验证 `6789/health`。control 回执按实验名、基线镜像、完整 launch 命令、输入输出形状、随机种子、rank 和轮次生成 SHA256 身份。身份一致时直接读取缓存，避免重复启动 control。`scripts.benchmarks.maintenance_window` 提供窗口和缓存契约。
+
+### 当前实现与官方主线基础矩阵
+
+2026-11-22 在同一个维护窗完成了当前候选与官方 vLLM nightly 的基础矩阵。两边使用同一份 1017 权重、1M 上下文、0.925 显存水位、16K chunk、TP4/DP2/EP8、k5、`max-num-seqs=256`、temperature 0.7、1024 输入和 128 输出。当前候选使用 `sha256:d82fc790c03e3891feb3205e5327fd90ef8c23f2e37da73017971d650a326add`，官方镜像使用 `sha256:5110d24384dc2977be947a398d4a31c21695c49acb78310ae379bdea408af6b0`，对应上游提交 `f8b29fab414884206460fe63b983ca34fc6e3e9b`。官方实现使用 SM80 有效的 `fp8 -> nvfp4_ds_mla` KV 布局，当前实现使用 `fp8_ds_mla`。
+
+| 并发 | 当前总 tok/s | 官方总 tok/s | 官方变化 | 当前输出 tok/s | 官方输出 tok/s | 当前 TTFT P50 | 官方 TTFT P50 | 当前 TPOT P50 | 官方 TPOT P50 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| C1 | 654.78 | 1585.50 | +142.14% | 72.75 | 176.17 | 1.272 s | 0.357 s | 3.829 ms | 2.902 ms |
+| C16 | 5875.87 | 10193.08 | +73.47% | 652.87 | 1132.56 | 2.401 s | 1.196 s | 5.693 ms | 4.737 ms |
+| C64 | 8221.94 | 13311.05 | +61.90% | 913.55 | 1479.01 | 5.401 s | 2.672 s | 27.560 ms | 22.063 ms |
+| C256 | 16416.62 | 17058.50 | +3.91% | 1824.07 | 1895.39 | 6.898 s | 7.837 s | 70.423 ms | 71.467 ms |
+
+冷 prefill 的 260,015 token 输入，当前 TTFT 均值为 26.698 s，官方为 27.466 s。1,047,000 token 输入，当前为 218.119 s，官方为 205.752 s。官方对应 prefill 吞吐分别为 9,466.88 和 5,088.65 token/s，当前为 9,753.26 和 4,800.13 token/s。原始回执、服务日志和计算报告保存在 `runtime/48-next-perf-20261122/final-comparison/`。
+
+KV-only native control/candidate 在 260,015 和 1,047,000 token 冷 prefill 上的差异约为千分之几，未达到可采纳的稳定收益阈值，继续保留候选 gate 和安全回退。
+
+完整指标套件随后在两边分别完成，包含短请求并发、独立单请求 prefill/decode、ISL/OSL 单流矩阵、ISL/OSL 并发矩阵、工具历史和图文混合。所有案例实际都运行在 1M context、0.925 显存水位、16K chunk、TP4/DP2/EP8 的服务上。catalog 中短请求案例保留了原始 262K launch 元数据，不能把它当作本轮实际 context。当前实现与官方实现的 7 个案例、54 个对齐单元全部 PASS，失败率均为 0%。完整逐条回执位于 `runtime/48-next-perf-20261122/full-current/` 和 `runtime/48-next-perf-20261122/full-official/`，对齐摘要位于 `runtime/48-next-perf-20261122/full-suite-comparison.md`，实际运行参数位于 `runtime/48-next-perf-20261122/full-suite-config.json`。
 
 </details>
