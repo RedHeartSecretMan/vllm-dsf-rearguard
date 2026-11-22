@@ -161,6 +161,7 @@ def stream_metrics(
     expected_input: int | None = None,
     input_tolerance: float = 0.0,
     clock=time.perf_counter,
+    progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Parse one SSE response into per-request timing.
 
@@ -170,6 +171,16 @@ def stream_metrics(
     """
     first = last = None
     events: list[float] = []
+    token_ids_seen: int | None = None
+    token_ids_observed = False
+    token_ids_invalid = False
+    if progress is not None:
+        progress.update(
+            first_output_s=None,
+            last_output_s=None,
+            output_events=0,
+            output_token_ids_seen=None,
+        )
     usage = None
     done = False
     finish = None
@@ -193,6 +204,24 @@ def stream_metrics(
             if isinstance(row.get(key), dict):
                 evidence.append(row[key])
         for choice in row.get("choices", []):
+            if not chat and "token_ids" in choice:
+                token_ids = choice["token_ids"]
+                if (
+                    isinstance(token_ids, list)
+                    and all(type(token_id) is int for token_id in token_ids)
+                ):
+                    token_ids_observed = True
+                    if not token_ids_invalid:
+                        token_ids_seen = (token_ids_seen or 0) + len(token_ids)
+                else:
+                    token_ids_invalid = True
+                    token_ids_seen = None
+                if progress is not None:
+                    progress["output_token_ids_seen"] = (
+                        None
+                        if token_ids_invalid or not token_ids_observed
+                        else token_ids_seen
+                    )
             produced = False
             if chat:
                 delta = choice.get("delta", {})
@@ -224,6 +253,11 @@ def stream_metrics(
                 last = now
                 events.append(now)
                 chunks += 1
+                if progress is not None:
+                    if progress["first_output_s"] is None:
+                        progress["first_output_s"] = now - started
+                    progress["last_output_s"] = now - started
+                    progress["output_events"] += 1
             if choice.get("finish_reason") is not None:
                 finish = choice["finish_reason"]
     if not done or first is None or last is None or not usage or finish is None:

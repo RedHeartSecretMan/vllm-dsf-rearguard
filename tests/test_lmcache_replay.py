@@ -27,6 +27,8 @@ class ReplayFixture:
         self.ranks = {}
         self.delay = 0.02
         self.drip = False
+        self.token_only_drip = False
+        self.omit_token_ids = False
         self.lock = Lock()
         fixture = self
 
@@ -57,16 +59,22 @@ class ReplayFixture:
                     return
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 stream = fixture.complete(body)
-                if not fixture.drip:
+                if not fixture.drip and not fixture.token_only_drip:
                     self.send_body(200, stream)
                     return
                 self.send_response(200)
                 self.end_headers()
                 try:
-                    for byte in stream.splitlines()[0].encode():
+                    if fixture.token_only_drip:
+                        first, *rest = stream.split("\n\n")
+                        self.wfile.write((first + "\n\n").encode())
+                        self.wfile.flush()
+                        drip = "\n\n".join(rest)
+                    else:
+                        drip = stream.splitlines()[0] + "\n"
+                    for byte in drip.encode():
                         self.wfile.write(bytes([byte]))
                         time.sleep(0.025)
-                    self.wfile.write(b"\n")
                 except OSError:
                     pass
 
@@ -140,8 +148,18 @@ class ReplayFixture:
             self.counts[rank][1] += prompt
             self.counts[rank][2] += output
             row["completed"] = time.monotonic()
+        first = (
+            'data: {"choices":[{"text":"","token_ids":[190]}]}'
+            if self.token_only_drip
+            else (
+                'data: {"choices":[{"text":"example","token_ids":[190,191],'
+                '"finish_reason":"length"}]}'
+                if body.get("return_token_ids") and not self.omit_token_ids
+                else 'data: {"choices":[{"text":"example","finish_reason":"length"}]}'
+            )
+        )
         return "\n\n".join([
-            'data: {"choices":[{"text":"example","finish_reason":"length"}]}',
+            first,
             "data: " + json.dumps({
                 "choices": [],
                 "usage": {
@@ -223,6 +241,8 @@ class ReplayCliTests(unittest.TestCase):
         self.assertEqual({r["input_tokens"] for r in first["rows"]}, {257, 273})
         self.assertEqual({r["output_tokens"] for r in first["rows"]}, {2})
         self.assertTrue(all(r["posted"] and r["ttft_s"] >= 0 for r in first["rows"]))
+        self.assertNotIn("record_progress", first)
+        self.assertTrue(all("partial_stream" not in r for r in first["rows"]))
         self.assertEqual(
             [first["metrics_delta_by_engine"][str(rank)]["finished_requests"] for rank in (0, 1)],
             [2, 2],
@@ -240,6 +260,56 @@ class ReplayCliTests(unittest.TestCase):
             self.assertTrue(early_body["ignore_eos"])
             self.assertFalse(early_body["add_special_tokens"])
 
+    def test_record_progress_full_stream_keeps_success_compatibility(self):
+        with tempfile.TemporaryDirectory() as temporary, ReplayFixture(Path(temporary)) as service:
+            workload = service.prepare("--users", 1, "--turns", 1)
+            result, baseline = service.run(workload, "baseline.json", "fixed", duration=600)
+            self.assertEqual(result.returncode, 0, baseline or result.stderr)
+            result, report = service.run(
+                workload,
+                "complete-progress.json",
+                "fixed",
+                "--record-progress",
+                duration=600,
+            )
+            self.assertEqual(result.returncode, 0, report or result.stderr)
+            self.assertTrue(report["record_progress"])
+            self.assertFalse(service.requests[0]["body"].get("return_token_ids", False))
+            self.assertTrue(service.requests[1]["body"]["return_token_ids"])
+
+        row, = report["rows"]
+        self.assertNotEqual(row["request_sha256"], baseline["rows"][0]["request_sha256"])
+        self.assertNotEqual(
+            report["offered_schedule_sha256"], baseline["offered_schedule_sha256"]
+        )
+        self.assertEqual(
+            report["offered_schedule_sha256"],
+            bench.workload_digest(
+                ["fixed", 600.0, [[row["chain_id"], row["turn"], row["planned_at_s"], row["request_sha256"]]]]
+            ),
+        )
+        self.assertEqual(row["status"], "PASS")
+        self.assertEqual(row["partial_stream"]["output_events"], 1)
+        self.assertEqual(row["partial_stream"]["output_token_ids_seen"], 2)
+        self.assertEqual(row["output_tokens"], 2)
+
+    def test_record_progress_does_not_estimate_missing_token_ids(self):
+        with tempfile.TemporaryDirectory() as temporary, ReplayFixture(Path(temporary)) as service:
+            service.omit_token_ids = True
+            workload = service.prepare("--users", 1, "--turns", 1)
+            result, report = service.run(
+                workload,
+                "missing-token-ids.json",
+                "fixed",
+                "--record-progress",
+                duration=600,
+            )
+            self.assertEqual(result.returncode, 0, report or result.stderr)
+
+        row, = report["rows"]
+        self.assertEqual(row["partial_stream"]["output_events"], 1)
+        self.assertIsNone(row["partial_stream"]["output_token_ids_seen"])
+
     def test_completion_deadline_interrupts_a_trickling_sse_line_without_retry(self):
         with tempfile.TemporaryDirectory() as temporary, ReplayFixture(Path(temporary)) as service:
             service.drip = True
@@ -250,8 +320,36 @@ class ReplayCliTests(unittest.TestCase):
             self.assertEqual(len(service.requests), 1)
         row, = report["rows"]
         self.assertEqual(row["status"], "FAIL")
+        self.assertNotIn("partial_stream", row)
         self.assertIn("TimeoutError", row["error"])
         self.assertLess(report["elapsed_s"], 0.45)
+
+    def test_record_progress_keeps_token_only_chunk_before_deadline_without_retry(self):
+        with tempfile.TemporaryDirectory() as temporary, ReplayFixture(Path(temporary)) as service:
+            service.token_only_drip = True
+            workload = service.prepare("--users", 1, "--turns", 1)
+            result, report = service.run(
+                workload,
+                "partial.json",
+                "fixed",
+                "--record-progress",
+                "--timeout",
+                0.12,
+            )
+            self.assertEqual(result.returncode, 1, report or result.stderr)
+            self.assertEqual(report["completion_post_attempts"], 1)
+            self.assertEqual(len(service.requests), 1)
+            self.assertTrue(service.requests[0]["body"]["return_token_ids"])
+
+        row, = report["rows"]
+        self.assertEqual(row["status"], "FAIL")
+        partial = row["partial_stream"]
+        self.assertEqual(partial["output_events"], 1)
+        self.assertEqual(partial["output_token_ids_seen"], 1)
+        self.assertGreaterEqual(partial["first_output_s"], 0)
+        self.assertGreaterEqual(partial["last_output_s"], partial["first_output_s"])
+        self.assertIsNone(row["output_tokens"])
+        self.assertIn("TimeoutError", row["error"])
 
     def test_closed_rolls_over_sessions_and_reports_completion_after_cutoff(self):
         with tempfile.TemporaryDirectory() as temporary, ReplayFixture(Path(temporary)) as service:

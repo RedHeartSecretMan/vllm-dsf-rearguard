@@ -228,7 +228,7 @@ def verify_endpoint(base_url, receipt):
     }
 
 
-def prepare_requests(workload):
+def prepare_requests(workload, record_progress=False):
     """Build immutable HTTP request templates and canonical hashes outside measurement."""
     pool = workload["token_pool"]
     plans = []
@@ -240,16 +240,30 @@ def prepare_requests(workload):
             size = turn["input_tokens"]
             repeats, remainder = divmod(size, len(rotated))
             prompt = rotated * repeats + rotated[:remainder]
-            body = {**bench.completion_body(prompt, turn["output_tokens"], workload["seed"]), "add_special_tokens": False}
+            body = {
+                **bench.completion_body(prompt, turn["output_tokens"], workload["seed"]),
+                "add_special_tokens": False,
+            }
+            if record_progress:
+                body["return_token_ids"] = True
             encoded = json.dumps(body, separators=(",", ":")).encode()
             turns.append({**turn, "body": encoded, "request_sha256": hashlib.sha256(encoded).hexdigest()})
         plans.append({"user_id": chain["user_id"], "turns": turns})
     return plans
 
 
-def planned_row(namespace, user, turn, cycle, planned_at):
-    salt = f"replay-{namespace}-{user}-{cycle}"
+def partial_stream_state():
     return {
+        "first_output_s": None,
+        "last_output_s": None,
+        "output_events": 0,
+        "output_token_ids_seen": None,
+    }
+
+
+def planned_row(namespace, user, turn, cycle, planned_at, record_progress=False):
+    salt = f"replay-{namespace}-{user}-{cycle}"
+    row = {
         "user_id": user,
         "chain_id": f"{user}/session-{cycle}",
         "cycle": cycle,
@@ -273,6 +287,9 @@ def planned_row(namespace, user, turn, cycle, planned_at):
         "e2e_s": None,
         "output_sha256": None,
     }
+    if record_progress:
+        row["partial_stream"] = partial_stream_state()
+    return row
 
 
 def abort_socket(sock):
@@ -333,7 +350,14 @@ def execute_requests(args, plans, rows, report, headers):
         row.update(posted=True, actual_started_s=offset, client_queue_s=max(0.0, offset - row["planned_at_s"]))
         try:
             with completion_response(args.base_url, body, headers, sent + args.timeout) as response:
-                row.update(bench.stream_metrics(response, sent, chat=False))
+                row.update(
+                    bench.stream_metrics(
+                        response,
+                        sent,
+                        chat=False,
+                        progress=row.get("partial_stream"),
+                    )
+                )
             require(row["input_tokens"] == row["expected_input_tokens"], f"expected {row['expected_input_tokens']} input tokens, got {row['input_tokens']}")
             require(row["output_tokens"] == row["expected_output_tokens"], f"expected {row['expected_output_tokens']} output tokens, got {row['output_tokens']}")
             require(row["finish_reason"] == "length", f"unexpected completion finish reason {row['finish_reason']!r}")
@@ -368,7 +392,14 @@ def execute_requests(args, plans, rows, report, headers):
         cycle = 0
         while clock() < cutoff:
             for turn in turns:
-                row = planned_row(report["namespace"], user, turn, cycle, planned_at)
+                row = planned_row(
+                    report["namespace"],
+                    user,
+                    turn,
+                    cycle,
+                    planned_at,
+                    args.record_progress,
+                )
                 if not complete(row, turn):
                     return completed
                 completed.append(row)
@@ -456,10 +487,20 @@ def run(args):
     require(last_arrival < args.duration, f"duration must exceed the last offered arrival ({last_arrival:g}s)")
     max_context = max(turn["input_tokens"] + turn["output_tokens"] for chain in workload["chains"] for turn in chain["turns"])
     require(positive_int(receipt["context"]) and max_context <= receipt["context"], f"input plus output requires at least {max_context} context tokens in the receipt")
-    plans = prepare_requests(workload)
+    plans = prepare_requests(workload, args.record_progress)
     fixed = args.mode == "fixed"
     rows = [
-        [planned_row(namespace, plan["user_id"], turn, 0, float(turn["planned_at_s"])) for turn in plan["turns"]]
+        [
+            planned_row(
+                namespace,
+                plan["user_id"],
+                turn,
+                0,
+                float(turn["planned_at_s"]),
+                args.record_progress,
+            )
+            for turn in plan["turns"]
+        ]
         for plan in plans
     ] if fixed else []
     if fixed:
@@ -500,6 +541,8 @@ def run(args):
         "both_dp_active": None,
         "errors": [],
     }
+    if args.record_progress:
+        report["record_progress"] = True
     api_key = os.environ.get("BENCH_API_KEY")
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     step = "endpoint"
@@ -555,6 +598,11 @@ def main(argv=None):
     replay.add_argument("--launch-receipt", type=Path, required=True)
     replay.add_argument("--duration", type=float, default=600.0, help="offering window in seconds (default 600)")
     replay.add_argument("--timeout", type=float, default=600.0, help="seconds per completion (default 600)")
+    replay.add_argument(
+        "--record-progress",
+        action="store_true",
+        help="request completion token IDs and retain partial SSE progress",
+    )
     replay.add_argument("--run-key", help="optional repeat identifier shared outside the unique cache namespace")
     replay.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
