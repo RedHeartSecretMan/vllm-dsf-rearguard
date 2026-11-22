@@ -15,6 +15,10 @@
     {
       "name": "sm80_acceleration",
       "files": 4
+    },
+    {
+      "name": "sm80_adaptive_experiment",
+      "files": 3
     }
   ],
   "files": [
@@ -141,7 +145,7 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/dspark.py",
       "base_sha256": "7645489aea921148c9bfb5a0b18e3f9073af1b10b0d51a7b70a881bd848038bf",
-      "patched_sha256": "9ce62a7aba2e7175ec24047fdc4e174e1bd437e6893e8011190210e7043c9d27",
+      "patched_sha256": "e75746e91057f93781d07eb66588d4aa5e51ac5992349dadc4279be9102cadc1",
       "stage": "sm80_acceleration"
     },
     {
@@ -267,7 +271,7 @@
     {
       "path": "vllm/v1/worker/gpu/model_runner.py",
       "base_sha256": "152aa57073aa74bc033388ef3c47277d866adeb9b813d53819b2be8e868c7f26",
-      "patched_sha256": "43a11f927849080aaf6130412e1886e04bae961ba6610bc8dd3c03d331292466",
+      "patched_sha256": "af5c53f9117f1da64385db28d3f698a6d1fec5b90a3d0b14d2412e06b8c984c0",
       "stage": "base_integration"
     },
     {
@@ -305,6 +309,24 @@
       "base_sha256": "6fd8c48008da7664095c3a3a66c0f15b1842e1fdf8afbcb4911de77e3233a242",
       "patched_sha256": "1c42ebd0280e23fdae44e5187498083758addd88b061ec3bc61b3944941410da",
       "stage": "base_integration"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/spec_decode/adaptive_verification.py",
+      "base_sha256": "f31f039ad279cdc25933b6b769ed06d3a333e9892740d3429d519b2a9ed0c2d7",
+      "patched_sha256": "b0ac982016fcf756d52bce77772237e9d517ce6b1df5691b5fb75831d62f4cd1",
+      "stage": "sm80_adaptive_experiment"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/spec_decode/dspark/speculator.py",
+      "base_sha256": "88f0c5da4bdfe96ef81cb4eb2381c4ef57303fd122dd278d08a90e8af202c9dc",
+      "patched_sha256": "ed026c2f4d8f2e8b0429a480450436559aa855b28ab3501da1b6134ca32a2b71",
+      "stage": "sm80_adaptive_experiment"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/spec_decode/sm80_adaptive.py",
+      "base_sha256": null,
+      "patched_sha256": "ff05935639265ebe5edd5796020aaec2d7770ebf5ad3e80d335d30ecd654dae6",
+      "stage": "sm80_adaptive_experiment"
     }
   ],
   "references": [

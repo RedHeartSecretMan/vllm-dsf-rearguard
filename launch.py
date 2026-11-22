@@ -144,6 +144,27 @@ def make_plan(args):
         raise ValueError("stacked-kv requires DSpark")
     if args.dspark_draft_sample_method == "probabilistic" and not args.dspark:
         raise ValueError("Probabilistic drafting requires DSpark")
+    if args.sm80_adaptive is not None:
+        if args.port == 6789:
+            raise ValueError("SM80 adaptive experiment requires an isolated test port")
+        if (
+            args.dspark != 5 or args.dspark_draft_sample_method != "greedy"
+            or args.parallel != "tp4dp2" or args.eager or kv_transfer is not None
+            or args.logits_row_chunk != 0
+            or selected.intersection({"decode-metadata", "ragged-reuse", "prefill-throttle"})
+        ):
+            raise ValueError(
+                "SM80 adaptive experiment requires TP4DP2, greedy DSpark k5, "
+                "FULL_DECODE_ONLY, and the baseline attention/cache paths"
+            )
+        env.update(
+            VLLM_DSV41_SM80_ADAPTIVE_EXPERIMENT="1",
+            VLLM_DSPARK_FUSED_MARKOV="0",
+            # Task-11 admits the replicated, non-candidate MQA path first.
+            VLLM_INDEXER_QUERY_SHARD="0",
+            VLLM_SM80_CANDIDATE_MQA="0",
+            VLLM_SM80_CANDIDATE_MQA_COMPACT="0",
+        )
     for experiment, variable in EXPERIMENTS.items():
         env[variable] = "1" if experiment in selected else "0"
     # NVSwitch hosts let NCCL choose its algorithms; "ring" pins them.
@@ -232,7 +253,7 @@ def make_plan(args):
                     "num_speculative_tokens": args.dspark,
                     "draft_sample_method": args.dspark_draft_sample_method,
                     "rejection_sample_method": "standard",
-                    "enable_adaptive_verification": False,
+                    "enable_adaptive_verification": args.sm80_adaptive == "candidate",
                     "use_local_argmax_reduction": args.dspark_draft_sample_method == "greedy",
                 }
             ),
@@ -301,6 +322,7 @@ def make_plan(args):
         "experimental": sorted(selected),
         "parallel": {"tp": tp, "dp": dp, "ep": 8, "max_global_seqs": args.max_seqs},
         "dspark": args.dspark,
+        **({"sm80_adaptive_arm": args.sm80_adaptive} if args.sm80_adaptive else {}),
         "dspark_draft_sample_method": args.dspark_draft_sample_method if args.dspark else None,
         "engram_dp_shared": args.engram_dp_shared,
         "context": args.context,
@@ -357,6 +379,10 @@ def parser():
     p.add_argument(
         "--dspark-draft-sample-method", choices=("greedy", "probabilistic"),
         default="greedy", help="Choose how DSpark samples draft tokens",
+    )
+    p.add_argument(
+        "--sm80-adaptive", choices=("control", "candidate"),
+        help="Opt into a matched 1017/SM80 DSpark adaptive experiment",
     )
     p.add_argument(
         "--context", type=int, choices=(262144, 524288, 1048576), default=262144

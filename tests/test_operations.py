@@ -64,6 +64,7 @@ class SourcePayloadTests(unittest.TestCase):
                 "base_integration": 33,
                 "model_support": 11,
                 "sm80_acceleration": 4,
+                "sm80_adaptive_experiment": 3,
             },
         )
         self.assertTrue(all((root / "adaptation/files" / row["path"]).is_file()

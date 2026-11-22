@@ -6,6 +6,7 @@ COPY adaptation /opt/vllm-dsf-rearguard/adaptation
 RUN python3 /opt/vllm-dsf-rearguard/adaptation/install.py
 COPY launch.py /opt/vllm-dsf-rearguard/launch.py
 COPY VERSION /opt/vllm-dsf-rearguard/VERSION
+COPY native /opt/vllm-dsf-rearguard/native
 COPY scripts /opt/vllm-dsf-rearguard/scripts
 COPY config /opt/vllm-dsf-rearguard/config
 COPY tests /opt/vllm-dsf-rearguard/tests
@@ -13,6 +14,7 @@ COPY manifests /opt/vllm-dsf-rearguard/manifests
 # The official Linux x86_64/cp312 wheel was built with Torch 2.13 and CUDA 13.
 # grpcio-observability pins grpcio; grpcio-status must use the same version.
 ARG ENABLE_LMCACHE_MP=0
+ARG ENABLE_KV_ONLY_NATIVE=0
 RUN case "${ENABLE_LMCACHE_MP}" in \
       0) ;; \
       1) python3 -m pip install --break-system-packages --no-cache-dir --no-deps --require-hashes \
@@ -23,6 +25,11 @@ RUN case "${ENABLE_LMCACHE_MP}" in \
          && CUDA_VISIBLE_DEVICES="" NVIDIA_VISIBLE_DEVICES=void \
            python3 /opt/vllm-dsf-rearguard/scripts/check_lmcache_runtime.py ;; \
       *) echo 'ENABLE_LMCACHE_MP must be 0 or 1' >&2; exit 1 ;; \
+    esac
+RUN case "${ENABLE_KV_ONLY_NATIVE}" in \
+      0) ;; \
+      1) VLLM_BUILD_KV_ONLY_NATIVE=1 python3 /opt/vllm-dsf-rearguard/scripts/build_kv_only_native.py ;; \
+      *) echo 'ENABLE_KV_ONLY_NATIVE must be 0 or 1' >&2; exit 1 ;; \
     esac
 RUN PYTHONPATH=/opt/vllm-dsf-rearguard \
     python3 -m unittest discover -s /opt/vllm-dsf-rearguard/tests -p 'test_*.py' -v
