@@ -16,6 +16,13 @@
       "--experimental",
       "bounded-prefill"
     ],
+    "1m-48": [
+      "--context", "1048576", "--memory", "0.925", "--chunk", "16384",
+      "--parallel", "tp4dp2", "--max-seqs", "256", "--dspark", "5",
+      "--experimental", "stacked-kv", "--experimental", "bounded-prefill",
+      "--experimental", "prefill-throttle", "--no-disable-chunked-mm-input",
+      "--responses-store", "--host-network-ipc"
+    ],
     "1m-unbounded": [
       "--context",
       "1048576",
@@ -157,6 +164,26 @@
             "ragged-reuse"
           ]
         }
+      ]
+    },
+    {
+      "id": "decode_metadata_factorial",
+      "title": "1M 下的 decode metadata 与 ragged reuse",
+      "control": "two_switch_factorial",
+      "workload": {
+        "decode": {
+          "kind": "token_burst",
+          "prompt_tokens": 10,
+          "osl": 128,
+          "concurrency": [128, 256],
+          "cache": "cold"
+        }
+      },
+      "variants": [
+        {"id": "baseline", "launch": "1m-48"},
+        {"id": "metadata", "launch": "1m-48", "extra_launch": ["--experimental", "decode-metadata"]},
+        {"id": "ragged", "launch": "1m-48", "extra_launch": ["--experimental", "ragged-reuse"]},
+        {"id": "combined", "launch": "1m-48", "extra_launch": ["--experimental", "decode-metadata", "--experimental", "ragged-reuse"]}
       ]
     },
     {
@@ -364,6 +391,40 @@
             "256",
             "--port",
             "6688"
+          ]
+        }
+      ],
+      "test_port": 6688
+    },
+    {
+      "id": "chunk_budget_1m_48",
+      "title": "1M / 0.925 的 16K 与 32K 分块对照",
+      "control": "chunk_budget",
+      "runner": "scripts.benchmarks.chunk_budget",
+      "workload": {
+        "repeats": 3,
+        "seed": 1017,
+        "return_token_ids": true,
+        "cells": [
+          {"id": "text_64k_1_c1", "kind": "text", "isl": 65536, "osl": 1, "concurrency": 1},
+          {"id": "text_260k_1_c1", "kind": "text", "isl": 260016, "osl": 1, "concurrency": 1},
+          {"id": "video32_128_c1", "kind": "video", "frames": 32, "min_input_tokens": 16385, "osl": 128, "concurrency": 1},
+          {"id": "video32_128_c4", "kind": "video", "frames": 32, "min_input_tokens": 16385, "osl": 128, "concurrency": 4}
+        ]
+      },
+      "variants": [
+        {
+          "id": "16k_mm_on", "launch": "1m",
+          "extra_launch": [
+            "--chunk", "16384", "--memory", "0.925", "--experimental", "prefill-throttle",
+            "--no-disable-chunked-mm-input", "--responses-store", "--port", "6688"
+          ]
+        },
+        {
+          "id": "32k_mm_on", "launch": "1m",
+          "extra_launch": [
+            "--chunk", "32768", "--memory", "0.925", "--experimental", "prefill-throttle",
+            "--no-disable-chunked-mm-input", "--responses-store", "--port", "6688"
           ]
         }
       ],

@@ -12,6 +12,7 @@ from scripts.bench_common import (
     launch_args,
     load_config,
     repeated_text,
+    require_model,
     select_cases,
     stream_metrics,
     summarize,
@@ -382,6 +383,36 @@ class RunnerTests(unittest.TestCase):
             ):
                 self.assertEqual(module.main(), 0)
                 self.assertTrue(out.getvalue().strip())
+
+    def test_benchmark_plans_and_runners_avoid_the_service_port(self):
+        config = {"launch": {"fixed": ["--context", "262144"]}}
+        entry = {"launch": "fixed"}
+        self.assertEqual(parse_launch(launch_args(config, entry)).port, 6688)
+        for port_args in (["--port", "6789"], ["--port=6789"]):
+            with self.subTest(port_args=port_args), self.assertRaisesRegex(ValueError, "6789"):
+                launch_args(config, {**entry, "extra_launch": port_args})
+        with patch("scripts.bench_common.json_request") as request:
+            with self.assertRaisesRegex(ValueError, "6789"):
+                require_model("http://127.0.0.1:6789")
+            request.assert_not_called()
+
+    def test_metadata_factorial_is_locked_to_production_and_varies_two_switches(self):
+        config = load_config("ab")
+        case = next(row for row in config["cases"] if row["id"] == "decode_metadata_factorial")
+        expected = {
+            "baseline": set(),
+            "metadata": {"decode-metadata"},
+            "ragged": {"ragged-reuse"},
+            "combined": {"decode-metadata", "ragged-reuse"},
+        }
+        self.assertEqual({variant["id"] for variant in case["variants"]}, set(expected))
+        shared = {"stacked-kv", "bounded-prefill", "prefill-throttle"}
+        for variant in case["variants"]:
+            plan = parse_launch(bench_ab.variant_plan(config, variant)["launch_args"])
+            self.assertEqual((plan.context, plan.memory, plan.chunk, plan.port), (1048576, 0.925, 16384, 6688))
+            self.assertEqual(set(plan.experimental), shared | expected[variant["id"]])
+        self.assertEqual(case["workload"]["decode"]["cache"], "cold")
+        self.assertEqual(case["workload"]["decode"]["concurrency"], [128, 256])
 
     def test_ab_plan_translates_options_launch_does_not_have(self):
         ab = load_config("ab")

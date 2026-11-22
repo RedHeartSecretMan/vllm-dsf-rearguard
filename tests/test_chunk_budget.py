@@ -52,6 +52,20 @@ class ChunkBudgetTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "scripts.benchmarks.chunk_budget"):
             bench_ab.measure("unused", case, case["variants"][0], 1)
 
+    def test_a100_1m_budget_profiles_require_the_deployed_waterline_and_throttle(self):
+        _, case = chunk_budget.case_config("chunk_budget_1m_48")
+        self.assertEqual([item["id"] for item in case["variants"]], ["16k_mm_on", "32k_mm_on"])
+        for profile in case["variants"]:
+            receipt = self.receipt(profile["id"])
+            with self.assertRaisesRegex(ValueError, "0.925"):
+                chunk_budget.verify_profile(profile, receipt)
+            command = receipt["command"]
+            command[command.index("--gpu-memory-utilization") + 1] = "0.925"
+            with self.assertRaisesRegex(ValueError, "PREFILL_THROTTLE=1"):
+                chunk_budget.verify_profile(profile, receipt)
+            command[command.index("VLLM_DSV41_PREFILL_THROTTLE=0")] = "VLLM_DSV41_PREFILL_THROTTLE=1"
+            chunk_budget.verify_profile(profile, receipt)
+
     def test_frozen_payloads_are_deterministic_and_repeats_are_cold(self):
         case = copy.deepcopy(self.case())
         case["workload"]["cells"] = [

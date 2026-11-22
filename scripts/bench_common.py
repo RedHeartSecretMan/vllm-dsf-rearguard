@@ -28,8 +28,10 @@ from scripts.quality_metrics import (
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config/benchmarks"
 MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
-# launch.py publishes the service on this host port
-DEFAULT_BASE_URL = "http://127.0.0.1:6789"
+SERVICE_PORT = 6789
+PERFORMANCE_PORT = 6688
+DEFAULT_BASE_URL = f"http://127.0.0.1:{SERVICE_PORT}"
+DEFAULT_PERFORMANCE_BASE_URL = f"http://127.0.0.1:{PERFORMANCE_PORT}"
 NATURE_CORPUS = (
     "A careful engineer reviews the design, measures the system, and records "
     "each result before changing the implementation. Reliable services balance "
@@ -81,7 +83,15 @@ def load_config(name: str) -> dict[str, Any]:
 
 def launch_args(config: dict[str, Any], entry: dict[str, Any]) -> list[str]:
     """Launch arguments of a case or variant: its preset plus its own extras."""
-    return list(config["launch"][entry["launch"]]) + list(entry.get("extra_launch", []))
+    args = [*config["launch"][entry["launch"]], *entry.get("extra_launch", [])]
+    has_port = False
+    for index, arg in enumerate(args):
+        flag, equals, value = arg.partition("=")
+        if flag == "--port":
+            has_port = True
+            if int(value if equals else args[index + 1]) == SERVICE_PORT:
+                raise ValueError(f"Choose a performance test port other than {SERVICE_PORT}")
+    return args if has_port else [*args, "--port", str(PERFORMANCE_PORT)]
 
 
 def verify_endpoint(base, launch):
@@ -128,7 +138,13 @@ def verify_endpoint(base, launch):
     }
 
 
+def require_performance_endpoint(base: str) -> None:
+    if urllib.parse.urlsplit(base).port == SERVICE_PORT:
+        raise ValueError(f"Choose a performance test port other than {SERVICE_PORT}")
+
+
 def require_model(base: str) -> None:
+    require_performance_endpoint(base)
     models = json_request(base, "/v1/models")
     if MODEL not in [row["id"] for row in models["data"]]:
         raise RuntimeError("served model identity is missing")
@@ -145,14 +161,26 @@ def stream_metrics(
     expected_input: int | None = None,
     input_tolerance: float = 0.0,
     clock=time.perf_counter,
+    progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Parse one SSE response into per-request timing.
 
     ``chat`` selects the chat delta format; otherwise the completions text
-    format is read. TTFT is measured to the first chunk that carries output.
+    format is read. TTFT is measured to the first chunk that carries output
+    text or, for completions with token IDs enabled, generated token IDs.
     """
     first = last = None
     events: list[float] = []
+    token_ids_seen: int | None = None
+    token_ids_observed = False
+    token_ids_invalid = False
+    if progress is not None:
+        progress.update(
+            first_output_s=None,
+            last_output_s=None,
+            output_events=0,
+            output_token_ids_seen=None,
+        )
     usage = None
     done = False
     finish = None
@@ -176,6 +204,24 @@ def stream_metrics(
             if isinstance(row.get(key), dict):
                 evidence.append(row[key])
         for choice in row.get("choices", []):
+            if not chat and "token_ids" in choice:
+                token_ids = choice["token_ids"]
+                if (
+                    isinstance(token_ids, list)
+                    and all(type(token_id) is int for token_id in token_ids)
+                ):
+                    token_ids_observed = True
+                    if not token_ids_invalid:
+                        token_ids_seen = (token_ids_seen or 0) + len(token_ids)
+                else:
+                    token_ids_invalid = True
+                    token_ids_seen = None
+                if progress is not None:
+                    progress["output_token_ids_seen"] = (
+                        None
+                        if token_ids_invalid or not token_ids_observed
+                        else token_ids_seen
+                    )
             produced = False
             if chat:
                 delta = choice.get("delta", {})
@@ -195,15 +241,23 @@ def stream_metrics(
                     or delta.get("reasoning_content")
                     or delta.get("tool_calls")
                 )
-            elif choice.get("text"):
-                output_parts.append(choice["text"])
-                produced = True
+            else:
+                text = choice.get("text")
+                if text:
+                    output_parts.append(text)
+                # Byte-fallback tokens may produce no visible text on their own.
+                produced = bool(text or choice.get("token_ids"))
             if produced:
                 now = clock()
                 first = now if first is None else first
                 last = now
                 events.append(now)
                 chunks += 1
+                if progress is not None:
+                    if progress["first_output_s"] is None:
+                        progress["first_output_s"] = now - started
+                    progress["last_output_s"] = now - started
+                    progress["output_events"] += 1
             if choice.get("finish_reason") is not None:
                 finish = choice["finish_reason"]
     if not done or first is None or last is None or not usage or finish is None:

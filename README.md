@@ -59,6 +59,7 @@ The two scenes above use the same prompt, [rainy-konbini-prompt.md](docs/showcas
 | 1M long requests | 1,047,000-token inputs at C16: 16/16 succeed at 7,865–8,018 input token/s across the three memory settings |
 | Full-model perplexity | 134 windows per configuration; token PPL 2.770433–2.774319 across all 9 |
 | GPQA Diamond | 198 questions; 91.54% mean accuracy over 4 runs |
+| DeepSWE v1.1 | 113 tasks × 8 sweeps; 72.79% Pass@1 |
 | Sustained load | 1M configuration, 30-minute closed loop; 7,940/7,940 requests succeed |
 
 Full data is in [Performance](docs/performance.md); test conditions and coverage are in [Validation](docs/validation.md). The detailed documents are currently written in Chinese.
@@ -166,7 +167,10 @@ The quick-start configuration is a good first deployment: 1M context, 16K chunk,
 | `--memory` | Start at `0.90`; if you need more KV capacity, validate `0.925` or `0.95` on your workload |
 | `--chunk` | Set `16384` explicitly; `32768` needs more memory headroom and requires `0.95` with a 1M context |
 | `--no-disable-chunked-mm-input` | Enable for large images, many images or video |
-| `--responses-store` | Enable if you need `previous_response_id`; in-memory history is LRU-bounded by `VLLM_RESPONSES_API_STORE_MAX_SIZE` (default `10000`) and stays in the current service process |
+| `--mm-encoder-tp-mode` | `weights` (default) shards the vision weights. `data` replicates the vision weights and distributes images or frames across TP ranks. |
+| `--dspark-draft-sample-method` | Use `greedy` by default. Benchmark `probabilistic` for nonzero-temperature requests and check the available GPU KV capacity. |
+| `--engram-dp-shared` | Share the pinned Engram tables on a single-node TP4/DP2 deployment. Budget 192 GiB of shared-memory space and 200 GiB of available RAM plus any LMCache L1. |
+| `--responses-store` | Enable when using `previous_response_id`; history is bounded and kept in the current API process |
 | `--experimental` | Repeatable. `stacked-kv` and `bounded-prefill` from the quick start are fully tested; validate other options on your workload |
 
 The startup log reports the actual KV capacity. Throughput, latency and capacity trade-offs for different workloads are in [Performance](docs/performance.md).
@@ -179,6 +183,7 @@ The startup log reports the actual KV capacity. Throughput, latency and capacity
 | [Performance](docs/performance.md) | Configuration guide, test method, full performance data and configuration comparisons |
 | [Performance plan](docs/perf-plan.md) | Feature repair gates and performance optimization matrix |
 | [Validation](docs/validation.md) | Functional, protocol, accuracy, resource limits, sustained load and build checks |
+| [LMCache MP](docs/lmcache-mp.md) | 512 GiB L1 configuration, launch and cross-DP cache validation |
 | [Changelog](CHANGELOG.md) | Features, optimizations, fixes and known limits by version |
 | [Adaptation layer](adaptation/README.md) | vLLM adaptation files, manifest and install flow |
 

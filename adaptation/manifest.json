@@ -6,15 +6,19 @@
   "components": [
     {
       "name": "base_integration",
-      "files": 31
+      "files": 33
     },
     {
       "name": "model_support",
-      "files": 10
+      "files": 11
     },
     {
       "name": "sm80_acceleration",
       "files": 4
+    },
+    {
+      "name": "sm80_adaptive_experiment",
+      "files": 3
     }
   ],
   "files": [
@@ -22,6 +26,12 @@
       "path": "vllm/_version.py",
       "base_sha256": "8fe922c590c4a22cd3a40f82354eb51bb9d8dba55463dcc9452788b0a5e4e12b",
       "patched_sha256": "9ffe6f749b0f36eef0679ecb1ae44be7ce6ebe597e862baf654056cdd1b44505",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/config/engram.py",
+      "base_sha256": "6604ada7a08890e992a2c450c76798d6620eab7e6f3f8a1b0dc2eea3d98e05a7",
+      "patched_sha256": "958115bf6370a2afe6cd927495cdb930144a6e844ec8a1be0790215e370775d7",
       "stage": "base_integration"
     },
     {
@@ -121,6 +131,12 @@
       "stage": "model_support"
     },
     {
+      "path": "vllm/models/deepseek_v4_1/common/engram.py",
+      "base_sha256": "8faafb768972509b62b14354efa4c99feab3438c24336f9ba447db4840d2bb5d",
+      "patched_sha256": "2a29e2b498c58e27a5544be5fad6dab2cb42bce96efbb62dc0d6bbf284281a4e",
+      "stage": "model_support"
+    },
+    {
       "path": "vllm/models/deepseek_v4_1/common/mm_preprocess.py",
       "base_sha256": "4ce1a019d74b1933706432c8aa1c347be78882019f25a956599665cf6d105d63",
       "patched_sha256": "690963132a9968acabddd08fc6f6ab5790ce7f77a9d3c43b9ed05bf3c05c3281",
@@ -129,13 +145,13 @@
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/dspark.py",
       "base_sha256": "7645489aea921148c9bfb5a0b18e3f9073af1b10b0d51a7b70a881bd848038bf",
-      "patched_sha256": "9ce62a7aba2e7175ec24047fdc4e174e1bd437e6893e8011190210e7043c9d27",
+      "patched_sha256": "e75746e91057f93781d07eb66588d4aa5e51ac5992349dadc4279be9102cadc1",
       "stage": "sm80_acceleration"
     },
     {
       "path": "vllm/models/deepseek_v4_1/nvidia/model.py",
       "base_sha256": "83c22bcc4c45e37d6da6e69edd9c43188e1baf5c11d486714f650d2777878dfa",
-      "patched_sha256": "47ff28d3279b61d2c5c6a2edc80ac74751f4c41d7a5b3afcf52819a0941d3423",
+      "patched_sha256": "3246c15c1704304a15fdaf8e72210007368694d220447ea11ebab471e17d1d11",
       "stage": "base_integration"
     },
     {
@@ -243,13 +259,19 @@
     {
       "path": "vllm/v1/core/sched/scheduler.py",
       "base_sha256": "5ef33e44cebc274bca239cc4337ad1370298fd369660b025ca98eec48c4cc015",
-      "patched_sha256": "fbe64800efed19803283bf8cfc8c43622c6b411e31c13eb27b1aba21248163d3",
+      "patched_sha256": "3ad56cfa9dd2d4835aed47037f5caeef4668a7c909b696db01c76a1c52e06337",
       "stage": "model_support"
     },
     {
       "path": "vllm/v1/worker/gpu/cudagraph_utils.py",
       "base_sha256": "c20278e8e8a1dfd65467059ddadb3fdd2a576178e839509d53202a18cef32d7b",
       "patched_sha256": "2ada603583a7f27af1b26fbc599fe57f31e96902cc8fb7e1dd3b249c4d2c9c12",
+      "stage": "base_integration"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/model_runner.py",
+      "base_sha256": "152aa57073aa74bc033388ef3c47277d866adeb9b813d53819b2be8e868c7f26",
+      "patched_sha256": "af5c53f9117f1da64385db28d3f698a6d1fec5b90a3d0b14d2412e06b8c984c0",
       "stage": "base_integration"
     },
     {
@@ -287,6 +309,24 @@
       "base_sha256": "6fd8c48008da7664095c3a3a66c0f15b1842e1fdf8afbcb4911de77e3233a242",
       "patched_sha256": "1c42ebd0280e23fdae44e5187498083758addd88b061ec3bc61b3944941410da",
       "stage": "base_integration"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/spec_decode/adaptive_verification.py",
+      "base_sha256": "f31f039ad279cdc25933b6b769ed06d3a333e9892740d3429d519b2a9ed0c2d7",
+      "patched_sha256": "b0ac982016fcf756d52bce77772237e9d517ce6b1df5691b5fb75831d62f4cd1",
+      "stage": "sm80_adaptive_experiment"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/spec_decode/dspark/speculator.py",
+      "base_sha256": "88f0c5da4bdfe96ef81cb4eb2381c4ef57303fd122dd278d08a90e8af202c9dc",
+      "patched_sha256": "ed026c2f4d8f2e8b0429a480450436559aa855b28ab3501da1b6134ca32a2b71",
+      "stage": "sm80_adaptive_experiment"
+    },
+    {
+      "path": "vllm/v1/worker/gpu/spec_decode/sm80_adaptive.py",
+      "base_sha256": null,
+      "patched_sha256": "ff05935639265ebe5edd5796020aaec2d7770ebf5ad3e80d335d30ecd654dae6",
+      "stage": "sm80_adaptive_experiment"
     }
   ],
   "references": [
@@ -309,6 +349,11 @@
       "url": "https://github.com/keplerzip/deepseek-v4.1-flash-1017-a100",
       "commit": "fb846337b3c580d885641e23fe5d201725735010",
       "scope": "guarded SM80 port reference"
+    },
+    {
+      "url": "https://github.com/vllm-project/vllm/pull/63996",
+      "commit": "e7fa26d5c8d94636a4d0525e1a2462cb661ea331",
+      "scope": "skip the MTP residual buffer for DSpark"
     }
   ],
   "encoder_reference": {

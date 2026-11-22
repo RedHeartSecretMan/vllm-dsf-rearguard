@@ -59,6 +59,7 @@ DSF 指 DeepSeek-V4.1-Flash；Rearguard 意为殿后部队。
 | 1M 长请求 | 1,047,000 token 输入、C16 时 16/16 成功，三档水位的输入吞吐为 7,865–8,018 token/s |
 | 全模型 PPL | 9 组配置各 134 个窗口，token PPL 为 2.770433–2.774319 |
 | GPQA Diamond | 198 题，4 轮平均准确率 91.54% |
+| DeepSWE v1.1 | 113 个任务 × 8 轮；Pass@1 72.79% |
 | 持续负载 | 1M 配置 30 分钟闭环测试，7,940/7,940 个请求成功 |
 
 完整数据见[性能与调优](docs/performance.md)，测试条件和覆盖范围见[验证结果](docs/validation.md)。
@@ -166,7 +167,10 @@ curl http://127.0.0.1:6789/v1/chat/completions \
 | `--memory` | 从 `0.90` 开始；需要更大 KV 容量时，再在目标负载上验证 `0.925` 或 `0.95` |
 | `--chunk` | 建议显式设为 `16384`；`32768` 需要更多显存预留，1M 上下文时需要 `0.95` 水位 |
 | `--no-disable-chunked-mm-input` | 处理大图、多图或视频时开启 |
-| `--responses-store` | 需要 `previous_response_id` 时开启；内存历史由 `VLLM_RESPONSES_API_STORE_MAX_SIZE`（默认 `10000`）限制为 LRU，并只保存在当前服务进程中 |
+| `--mm-encoder-tp-mode` | 默认 `weights` 切分视觉权重。`data` 在各 TP rank 保留完整视觉权重，将图片或视频帧分给各 rank 编码。 |
+| `--dspark-draft-sample-method` | 默认 `greedy`。温度大于 0 的负载可测试 `probabilistic`，并核对 GPU KV 容量。 |
+| `--engram-dp-shared` | 在单节点 TP4/DP2 下共享 Engram 主机表。为共享内存预留 192 GiB，为主机 RAM 预留 200 GiB，并另计 LMCache L1。 |
+| `--responses-store` | 使用 `previous_response_id` 时开启；历史有界保存在当前 API 进程内 |
 | `--experimental` | 可重复传入；快速开始中的 `stacked-kv` 和 `bounded-prefill` 已完成完整测试，其他选项需在目标负载上验证 |
 
 启动日志会给出实际 KV 容量。不同负载的吞吐、延迟和容量取舍见[性能与调优](docs/performance.md)。
@@ -179,6 +183,7 @@ curl http://127.0.0.1:6789/v1/chat/completions \
 | [性能与调优](docs/performance.md) | 配置建议、测试方法、完整性能数据和配置对照 |
 | [性能优化计划](docs/perf-plan.md) | 功能修复准入、性能候选和正式矩阵 |
 | [验证结果](docs/validation.md) | 功能、协议、精度、资源边界、持续负载和构建校验 |
+| [LMCache MP](docs/lmcache-mp.md) | 512 GiB L1 配置、启动和跨 DP 命中验收 |
 | [更新日志](CHANGELOG.md) | 版本功能、优化、修复和使用限制 |
 | [适配层说明](adaptation/README.md) | vLLM 适配文件、清单和安装流程 |
 

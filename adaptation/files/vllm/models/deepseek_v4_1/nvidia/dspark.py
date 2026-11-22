@@ -10,13 +10,15 @@ To implement non-causal attention, we leverage the sparse attention implementati
 include the future query tokens in the top-k indices for each query token.
 """
 
-from collections.abc import Iterable
 import os
+from collections.abc import Iterable
+from functools import lru_cache
+from pathlib import Path
 
 import regex as re
 import torch
 import torch.nn as nn
-
+import vllm
 import vllm.envs as envs
 from vllm.config import VllmConfig, get_current_vllm_config
 from vllm.distributed import (
@@ -33,7 +35,10 @@ from vllm.model_executor.layers.fused_moe import (
     fused_moe_make_expert_params_mapping,
 )
 from vllm.model_executor.layers.layernorm import RMSNorm
-from vllm.model_executor.layers.linear import MergedColumnParallelLinear, ReplicatedLinear
+from vllm.model_executor.layers.linear import (
+    MergedColumnParallelLinear,
+    ReplicatedLinear,
+)
 from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.model_executor.layers.vocab_parallel_embedding import (
     ParallelLMHead,
@@ -60,6 +65,24 @@ from .model import (
 )
 
 logger = init_logger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _get_kv_only_insert_op():
+    """Load the optional native KV-only op when the candidate image has it."""
+    op = getattr(
+        torch.ops._C, "fused_deepseek_v4_kv_rope_insert", None
+    )
+    if op is not None:
+        return op
+    library = Path(vllm.__file__).resolve().parent / "_C_kv_only_native.so"
+    if library.is_file():
+        try:
+            torch.ops.load_library(str(library))
+        except (OSError, RuntimeError) as error:
+            logger.warning_once("Unable to load optional KV-only native op: %s", error)
+    return getattr(torch.ops._C, "fused_deepseek_v4_kv_rope_insert", None)
+
 
 # MoE expert scale suffix differs by expert dtype (mirrors deepseek_v4 loaders):
 # fp4 experts register ``.weight_scale``; block-fp8 experts ``.weight_scale_inv``.
@@ -270,6 +293,29 @@ def _insert_context_kv(
     block_size = attn.swa_cache_layer.block_size
     cos_sin_cache = attn.rotary_emb.cos_sin_cache
     cache_dtype = swa_cache.dtype
+
+    # The optional native op is compiled into the pinned stable extension only
+    # when the A/B image rebuild includes the matching csrc change.  Restrict
+    # dispatch to the current DeepSeek fp8_ds_mla record width.  In particular,
+    # a different packed uint8 format such as 528-byte MXFP8 must keep using
+    # the established path until its own kernel and layout are available.
+    kv_only_insert = _get_kv_only_insert_op()
+    if (
+        cache_dtype == torch.uint8
+        and kv_only_insert is not None
+        and len(swa_cache.shape) == 3
+        and swa_cache.shape[-1] == 584
+    ):
+        kv_only_insert(
+            kv,
+            swa_cache,
+            slot_mapping,
+            positions,
+            cos_sin_cache,
+            block_size,
+        )
+        return
+
     n_ctx = kv.shape[0]
     # The fused insert operators write the Q result into this buffer, but the
     # DSpark context path discards that result: only the RoPE/quantized KV

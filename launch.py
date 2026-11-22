@@ -6,11 +6,22 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.check_runtime import require_matching_report
+from scripts.lmcache_mp import (
+    DEFAULT_PROFILE,
+    HOST,
+    LMCacheMP,
+    require_free_ports,
+    require_l1_capacity,
+    stop_sidecar,
+    wait_for_health,
+)
 from scripts.model_check import MANIFEST, ROOT, require_receipt, sha256
 
 MODEL_NAME = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
@@ -27,6 +38,10 @@ KV_TRANSFER_CONNECTORS = {
     "OffloadingConnector",
 }
 KV_TRANSFER_ROLES = {"kv_both", "kv_producer", "kv_consumer"}
+# The pinned 1017 tables occupy 188.84 GiB before the backend RAM reserve.
+ENGRAM_SHARED_SHM_GIB = 192
+ENGRAM_SHARED_RAM_GIB = 200
+ENGRAM_SHARED_SHM = "256g"
 
 
 def load_kv_transfer_config(value: str | None) -> dict | None:
@@ -102,6 +117,8 @@ def make_plan(args):
     ):
         raise ValueError("Invalid memory, port, sequence count, or chunk budget")
     tp, dp = (8, 1) if args.parallel == "tp8" else (4, 2)
+    if args.engram_dp_shared and (tp, dp) != (4, 2):
+        raise ValueError("Engram host sharing requires TP4/DP2 on one node")
     if args.max_seqs % dp:
         raise ValueError("Global max-seqs must be divisible by DP")
     per_rank = args.max_seqs // dp
@@ -113,9 +130,41 @@ def make_plan(args):
     env["VLLM_DSV4_LOGITS_ROW_CHUNK"] = str(args.logits_row_chunk)
     env["VLLM_ENABLE_RESPONSES_API_STORE"] = "1" if args.responses_store else "0"
     selected = set(args.experimental)
-    kv_transfer = load_kv_transfer_config(args.kv_transfer_config)
+    lmcache = LMCacheMP.load(args.lmcache_mp) if args.lmcache_mp else None
+    host_network_ipc = args.host_network_ipc or lmcache is not None
+    if lmcache is not None and args.port in (lmcache.port, lmcache.http_port):
+        raise ValueError("vLLM and LMCache MP must use different ports")
+    if host_network_ipc:
+        # Keep the worker start method identical across the MP A/B arms.
+        env["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+    kv_transfer = (
+        lmcache.transfer_config() if lmcache else load_kv_transfer_config(args.kv_transfer_config)
+    )
     if "stacked-kv" in selected and not args.dspark:
         raise ValueError("stacked-kv requires DSpark")
+    if args.dspark_draft_sample_method == "probabilistic" and not args.dspark:
+        raise ValueError("Probabilistic drafting requires DSpark")
+    if args.sm80_adaptive is not None:
+        if args.port == 6789:
+            raise ValueError("SM80 adaptive experiment requires an isolated test port")
+        if (
+            args.dspark != 5 or args.dspark_draft_sample_method != "greedy"
+            or args.parallel != "tp4dp2" or args.eager or kv_transfer is not None
+            or args.logits_row_chunk != 0
+            or selected.intersection({"decode-metadata", "ragged-reuse", "prefill-throttle"})
+        ):
+            raise ValueError(
+                "SM80 adaptive experiment requires TP4DP2, greedy DSpark k5, "
+                "FULL_DECODE_ONLY, and the baseline attention/cache paths"
+            )
+        env.update(
+            VLLM_DSV41_SM80_ADAPTIVE_EXPERIMENT="1",
+            VLLM_DSPARK_FUSED_MARKOV="0",
+            # Task-11 admits the replicated, non-candidate MQA path first.
+            VLLM_INDEXER_QUERY_SHARD="0",
+            VLLM_SM80_CANDIDATE_MQA="0",
+            VLLM_SM80_CANDIDATE_MQA_COMPACT="0",
+        )
     for experiment, variable in EXPERIMENTS.items():
         env[variable] = "1" if experiment in selected else "0"
     # NVSwitch hosts let NCCL choose its algorithms; "ring" pins them.
@@ -143,9 +192,9 @@ def make_plan(args):
         "--served-model-name",
         MODEL_NAME,
         "--host",
-        "0.0.0.0",
+        HOST if host_network_ipc else "0.0.0.0",
         "--port",
-        "8000",
+        str(args.port) if host_network_ipc else "8000",
         "--tensor-parallel-size",
         str(tp),
         "--data-parallel-size",
@@ -166,7 +215,8 @@ def make_plan(args):
         "--kv-cache-dtype",
         "fp8_ds_mla",
         "--engram-config",
-        '{"cpu_offload":true}',
+        '{"cpu_offload":true,"dp_shared_memory":true}'
+        if args.engram_dp_shared else '{"cpu_offload":true}',
         "--tokenizer-mode",
         "deepseek_v41",
         "--tool-call-parser",
@@ -201,10 +251,10 @@ def make_plan(args):
                 {
                     "method": "dspark",
                     "num_speculative_tokens": args.dspark,
-                    "draft_sample_method": "greedy",
+                    "draft_sample_method": args.dspark_draft_sample_method,
                     "rejection_sample_method": "standard",
-                    "enable_adaptive_verification": False,
-                    "use_local_argmax_reduction": True,
+                    "enable_adaptive_verification": args.sm80_adaptive == "candidate",
+                    "use_local_argmax_reduction": args.dspark_draft_sample_method == "greedy",
                 }
             ),
         ]
@@ -217,6 +267,8 @@ def make_plan(args):
     if args.text_only:
         serve += ["--language-model-only"]
     else:
+        if args.mm_encoder_tp_mode is not None:
+            serve += ["--mm-encoder-tp-mode", args.mm_encoder_tp_mode]
         serve += [
             "--limit-mm-per-prompt",
             '{"image":64,"video":{"count":2,"num_frames":32}}',
@@ -243,13 +295,16 @@ def make_plan(args):
         "vllm-dsf-rearguard.owner=vllm-dsf-rearguard",
         "--gpus",
         "all",
-        "--ipc=private",
-        "--shm-size",
-        "64g",
         "--ulimit",
         "memlock=-1",
-        "-p",
-        f"127.0.0.1:{args.port}:8000",
+        *(
+            ["--network=host", "--ipc=host"]
+            if host_network_ipc
+            else [
+                "--ipc=private", "--shm-size", ENGRAM_SHARED_SHM if args.engram_dp_shared else "64g",
+                "-p", f"127.0.0.1:{args.port}:8000",
+            ]
+        ),
         "--mount",
         f"type=bind,src={model},dst={CONTAINER_MODEL},readonly",
         "--mount",
@@ -267,13 +322,22 @@ def make_plan(args):
         "experimental": sorted(selected),
         "parallel": {"tp": tp, "dp": dp, "ep": 8, "max_global_seqs": args.max_seqs},
         "dspark": args.dspark,
+        **({"sm80_adaptive_arm": args.sm80_adaptive} if args.sm80_adaptive else {}),
+        "dspark_draft_sample_method": args.dspark_draft_sample_method if args.dspark else None,
+        "engram_dp_shared": args.engram_dp_shared,
         "context": args.context,
         "kernels": args.kernels,
         "text_only": args.text_only,
+        "mm_encoder_tp_mode": None if args.text_only else (args.mm_encoder_tp_mode or "weights"),
         "disable_chunked_mm_input": args.disable_chunked_mm_input,
         "responses_store": args.responses_store,
         "api_server_count": 1 if args.responses_store else None,
         "gpu_validation": "NOT_RUN",
+        "host_network_ipc": host_network_ipc,
+        "lmcache_mp": asdict(lmcache) if lmcache else None,
+        "lmcache_server_command": (
+            lmcache.server_command(f"{args.name}-lmcache", args.image) if lmcache else None
+        ),
         "kv_transfer_config": kv_transfer,
         "kv_transfer_config_sha256": (
             hashlib.sha256(
@@ -305,8 +369,20 @@ def parser():
     p.add_argument("model", type=Path)
     p.add_argument("--parallel", choices=("tp8", "tp4dp2"), default="tp4dp2")
     p.add_argument(
+        "--engram-dp-shared", action="store_true",
+        help="Share pinned Engram host tables between local TP4/DP2 replicas",
+    )
+    p.add_argument(
         "--dspark", type=int, choices=(0, 5), default=5,
         help="Speculative tokens: 0 disables DSpark; 5 enables it (default)",
+    )
+    p.add_argument(
+        "--dspark-draft-sample-method", choices=("greedy", "probabilistic"),
+        default="greedy", help="Choose how DSpark samples draft tokens",
+    )
+    p.add_argument(
+        "--sm80-adaptive", choices=("control", "candidate"),
+        help="Opt into a matched 1017/SM80 DSpark adaptive experiment",
     )
     p.add_argument(
         "--context", type=int, choices=(262144, 524288, 1048576), default=262144
@@ -325,13 +401,28 @@ def parser():
         help="Opt-in SM80 prefill logits row chunk; 0 keeps the monolithic path",
     )
     p.add_argument("--memory", type=float, default=0.90)
-    p.add_argument(
+    transfer = p.add_mutually_exclusive_group()
+    transfer.add_argument(
         "--kv-transfer-config",
         help="JSON object or @file for SimpleCPUOffloadConnector/OffloadingConnector",
     )
+    transfer.add_argument(
+        "--lmcache-mp", nargs="?", type=Path, const=DEFAULT_PROFILE, metavar="PROFILE",
+        help="Use a loopback LMCache MP sidecar (default profile: L1 512 GiB, no L2)",
+    )
+    p.add_argument(
+        "--host-network-ipc", action="store_true",
+        help="Use host network and IPC with a loopback API, also used by LMCache MP",
+    )
     p.add_argument("--kernels", choices=("control", "optimized"), default="optimized")
     p.add_argument("--nccl", choices=("auto", "ring"), default="auto")
-    p.add_argument("--text-only", action="store_true")
+    encoder = p.add_mutually_exclusive_group()
+    encoder.add_argument("--text-only", action="store_true")
+    encoder.add_argument(
+        "--mm-encoder-tp-mode",
+        choices=("weights", "data"),
+        help="Shard vision encoder weights (default) or split media across TP ranks",
+    )
     p.add_argument(
         "--responses-store", action="store_true",
         help="Keep Responses history in one API worker for previous_response_id; disabled by default.",
@@ -360,18 +451,8 @@ def parser():
     return p
 
 
-def main():
-    args = parser().parse_args()
-    plan = make_plan(args)
-    if not args.start:
-        print(json.dumps(plan, indent=2))
-        return
-    require_idle_gpus()
-    # Pin the actual launch to its local immutable image ID.
-    image = json.loads(
-        subprocess.check_output(["docker", "image", "inspect", args.image])
-    )[0]
-    runtime_report = json.loads(
+def inspect_runtime(image_id: str, script: str) -> dict:
+    return json.loads(
         subprocess.check_output(
             [
                 "docker",
@@ -386,23 +467,74 @@ def main():
                 "NVIDIA_VISIBLE_DEVICES=void",
                 "--entrypoint",
                 "python3",
-                image["Id"],
-                "/opt/vllm-dsf-rearguard/check_runtime.py",
+                image_id,
+                f"/opt/vllm-dsf-rearguard/{script}",
             ],
         )
     )
+
+
+def require_engram_capacity(host_ipc: bool, lmcache_gib: int) -> None:
+    if host_ipc and shutil.disk_usage("/dev/shm").free < (ENGRAM_SHARED_SHM_GIB << 30):
+        raise ValueError(f"Engram host sharing needs {ENGRAM_SHARED_SHM_GIB} GiB free in /dev/shm")
+    required_gib = ENGRAM_SHARED_RAM_GIB + lmcache_gib
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:") and int(line.split()[1]) >= (required_gib << 20):
+            return
+    raise ValueError(f"Engram host sharing and the selected L1 budget need {required_gib} GiB of available RAM")
+
+
+def start_plan(args, plan: dict) -> Path:
+    require_idle_gpus()
+    image_id = json.loads(
+        subprocess.check_output(["docker", "image", "inspect", args.image])
+    )[0]["Id"]
+    runtime_report = inspect_runtime(image_id, "check_runtime.py")
     plan["source_manifest_sha256"] = require_matching_report(runtime_report, ROOT)
+    lmcache = LMCacheMP(**plan["lmcache_mp"]) if plan["lmcache_mp"] else None
+    if plan["engram_dp_shared"]:
+        require_engram_capacity(plan["host_network_ipc"], lmcache.l1_size_gb if lmcache else 0)
+    if lmcache:
+        plan["lmcache_runtime"] = inspect_runtime(image_id, "scripts/check_lmcache_runtime.py")
+        require_l1_capacity(lmcache)
+        require_free_ports((args.port, lmcache.port, lmcache.http_port))
+        plan["lmcache_server_command"] = lmcache.server_command(f"{args.name}-lmcache", image_id)
+    elif plan["host_network_ipc"]:
+        require_free_ports((args.port,))
     require_receipt(args.model, args.receipt)
     require_idle_gpus()
-    plan["command"][plan["command"].index(args.image)] = image["Id"]
-    plan["image_id"] = image["Id"]
+    plan["command"][plan["command"].index(args.image)] = image_id
+    plan["image_id"] = image_id
     destination = (
         ROOT / "runtime" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     )
     destination.mkdir(parents=True)
-    (destination / "launch.json").write_text(json.dumps(plan, indent=2) + "\n")
-    plan["container_id"] = subprocess.check_output(plan["command"], text=True).strip()
-    (destination / "launch.json").write_text(json.dumps(plan, indent=2) + "\n")
+    receipt = destination / "launch.json"
+    receipt.write_text(json.dumps(plan, indent=2) + "\n")
+    try:
+        if lmcache:
+            plan["lmcache_container_id"] = subprocess.check_output(
+                plan["lmcache_server_command"], text=True,
+            ).strip()
+            wait_for_health(lmcache.http_port)
+            plan["lmcache_healthcheck"] = "PASS"
+        plan["container_id"] = subprocess.check_output(plan["command"], text=True).strip()
+    except BaseException:
+        if sidecar := plan.get("lmcache_container_id"):
+            stop_sidecar(sidecar)
+        raise
+    finally:
+        receipt.write_text(json.dumps(plan, indent=2) + "\n")
+    return destination
+
+
+def main():
+    args = parser().parse_args()
+    plan = make_plan(args)
+    if not args.start:
+        print(json.dumps(plan, indent=2))
+        return
+    destination = start_plan(args, plan)
     print(
         "Launch requested; health and GPU acceptance are still required. Evidence:",
         destination,

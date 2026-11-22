@@ -40,9 +40,9 @@ TEST_PORT = 6688
 DEFAULT_BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
 
 
-def case_config() -> tuple[dict[str, Any], dict[str, Any]]:
+def case_config(case_id: str = "chunk_budget") -> tuple[dict[str, Any], dict[str, Any]]:
     config = load_config("ab")
-    (case,) = select_cases(config, "chunk_budget")
+    (case,) = select_cases(config, case_id)
     return config, case
 
 
@@ -91,6 +91,8 @@ def build_workload(
         if cell["kind"] == "text":
             prompt = [rng.choice(pool) for _ in range(cell["isl"])]
             body = completion_body(prompt, cell["osl"], seed)
+            if config.get("return_token_ids"):
+                body["return_token_ids"] = True
         else:
             content = [{"type": "text", "text": (
                 f"Request {salt}. Describe the visible digits and background colors in order. "
@@ -121,13 +123,13 @@ def build_workload(
     return artifact
 
 
-def load_workload(path: Path) -> dict[str, Any]:
+def load_workload(path: Path, case_id: str = "chunk_budget") -> dict[str, Any]:
     artifact = json.loads(path.read_text())
     recorded = artifact.pop("sha256")
     if workload_digest(artifact) != recorded:
         raise ValueError("workload JSON digest mismatch")
     artifact["sha256"] = recorded
-    if artifact.get("schema_version") != 1 or artifact.get("case") != "chunk_budget" or artifact.get("model") != MODEL:
+    if artifact.get("schema_version") != 1 or artifact.get("case") != case_id or artifact.get("model") != MODEL:
         raise ValueError("unsupported workload artifact")
     salts = []
     for cell in artifact["cells"]:
@@ -149,12 +151,14 @@ def verify_profile(profile: dict[str, Any], receipt: dict[str, Any]) -> None:
         raise ValueError(f"profile requires test port {TEST_PORT}")
     if command_option(command, "-p") != f"127.0.0.1:{TEST_PORT}:8000":
         raise ValueError(f"profile requires test port binding 127.0.0.1:{TEST_PORT}:8000")
-    chunk = extra[extra.index("--chunk") + 1]
+    chunk = command_option(extra, "--chunk")
+    memory = command_option(extra, "--memory") if "--memory" in extra else "0.9"
+    throttle = "1" if "prefill-throttle" in extra else "0"
     expected = {
         "--tensor-parallel-size": "4", "--data-parallel-size": "2",
         "--data-parallel-size-local": "2", "--max-model-len": "1048576",
         "--max-num-seqs": "128", "--max-num-batched-tokens": chunk,
-        "--gpu-memory-utilization": "0.9", "--api-server-count": "1",
+        "--gpu-memory-utilization": memory, "--api-server-count": "1",
         "--kv-cache-dtype": "fp8_ds_mla",
     }
     for flag, value in expected.items():
@@ -181,7 +185,7 @@ def verify_profile(profile: dict[str, Any], receipt: dict[str, Any]) -> None:
     required_env = {
         "OMP_NUM_THREADS": "8", "VLLM_ENABLE_RESPONSES_API_STORE": "1",
         "VLLM_DSV41_STACKED_DRAFT_KV": "1", "VLLM_DSV41_BOUNDED_PREFILL_WORKSPACE": "1",
-        "VLLM_DSV41_PREFILL_THROTTLE": "0", "VLLM_SM80_EP8_CUSTOM_AG_RS": "1",
+        "VLLM_DSV41_PREFILL_THROTTLE": throttle, "VLLM_SM80_EP8_CUSTOM_AG_RS": "1",
     }
     for key, value in required_env.items():
         if env.get(key) != value:
@@ -258,6 +262,7 @@ def run_profile(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", "--list", action="store_true", dest="plan")
+    parser.add_argument("--case", choices=("chunk_budget", "chunk_budget_1m_48"), default="chunk_budget")
     parser.add_argument("--prepare-workload", action="store_true")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--workload", type=Path)
@@ -269,7 +274,7 @@ def main() -> int:
     parser.add_argument("--cell", action="append")
     parser.add_argument("--timeout", type=float, default=3600)
     args = parser.parse_args()
-    config, case = case_config()
+    config, case = case_config(args.case)
     if args.plan:
         print(json.dumps({"profiles": {v["id"]: variant_plan(config, v) for v in case["variants"]}, "workload": case["workload"]}, indent=2))
         return 0
@@ -295,7 +300,10 @@ def main() -> int:
     profile = next((v for v in case["variants"] if v["id"] == args.profile), None)
     if profile is None:
         parser.error(f"unknown profile; choose from {[v['id'] for v in case['variants']]}")
-    return run_profile(args.base_url, profile, json.loads(args.launch_receipt.read_text()), load_workload(args.workload), args.output, args.timeout, args.cell)
+    return run_profile(
+        args.base_url, profile, json.loads(args.launch_receipt.read_text()),
+        load_workload(args.workload, case_id=args.case), args.output, args.timeout, args.cell,
+    )
 
 
 if __name__ == "__main__":

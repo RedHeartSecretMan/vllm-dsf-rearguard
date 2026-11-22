@@ -61,9 +61,10 @@ class SourcePayloadTests(unittest.TestCase):
         self.assertEqual(
             stages,
             {
-                "base_integration": 31,
-                "model_support": 10,
+                "base_integration": 33,
+                "model_support": 11,
                 "sm80_acceleration": 4,
+                "sm80_adaptive_experiment": 3,
             },
         )
         self.assertTrue(all((root / "adaptation/files" / row["path"]).is_file()
@@ -194,6 +195,21 @@ class LaunchTests(unittest.TestCase):
         disabled = self.plan("--disable-chunked-mm-input")["command"]
         self.assertIn("--disable-chunked-mm-input", disabled)
 
+    def test_encoder_tp_mode_is_opt_in_and_recorded_in_the_plan(self):
+        baseline = self.plan()
+        self.assertEqual(baseline["mm_encoder_tp_mode"], "weights")
+        self.assertNotIn("--mm-encoder-tp-mode", baseline["command"])
+        for mode in ("weights", "data"):
+            with self.subTest(mode=mode):
+                plan = self.plan("--mm-encoder-tp-mode", mode)
+                command = plan["command"]
+                self.assertEqual(plan["mm_encoder_tp_mode"], mode)
+                self.assertEqual(command[command.index("--mm-encoder-tp-mode") + 1], mode)
+        self.assertIsNone(self.plan("--text-only")["mm_encoder_tp_mode"])
+        with patch("sys.stderr", new=io.StringIO()):
+            with self.assertRaises(SystemExit):
+                launch.parser().parse_args(["/model", "--text-only", "--mm-encoder-tp-mode", "data"])
+
     def test_k7_rejected_and_no_speculation_means_no_spec_config(self):
         with patch("sys.stderr", new=io.StringIO()) as stderr:
             with self.assertRaises(SystemExit) as error:
@@ -208,6 +224,42 @@ class LaunchTests(unittest.TestCase):
                 )
         self.assertEqual(launch.parser().parse_args(["/model"]).dspark, 5)
         self.assertNotIn("--speculative-config", self.plan("--dspark", "0")["command"])
+
+    def test_dspark_probabilistic_drafting_keeps_standard_verification(self):
+        control = self.plan()
+        candidate = self.plan("--dspark-draft-sample-method", "probabilistic")
+        for plan, method, local_argmax in (
+            (control, "greedy", True), (candidate, "probabilistic", False),
+        ):
+            with self.subTest(method=method):
+                command = plan["command"]
+                config = json.loads(command[command.index("--speculative-config") + 1])
+                self.assertEqual(config, {
+                    "method": "dspark", "num_speculative_tokens": 5,
+                    "draft_sample_method": method, "rejection_sample_method": "standard",
+                    "enable_adaptive_verification": False,
+                    "use_local_argmax_reduction": local_argmax,
+                })
+                self.assertEqual(plan["dspark_draft_sample_method"], method)
+        with self.assertRaisesRegex(ValueError, "requires DSpark"):
+            self.plan("--dspark", "0", "--dspark-draft-sample-method", "probabilistic")
+
+    def test_engram_shared_storage_changes_only_the_opt_in_config_and_ipc_budget(self):
+        baseline = self.plan()
+        shared = self.plan("--engram-dp-shared")
+        for plan, expected, shm in (
+            (baseline, {"cpu_offload": True}, "64g"),
+            (shared, {"cpu_offload": True, "dp_shared_memory": True}, "256g"),
+        ):
+            command = plan["command"]
+            self.assertEqual(json.loads(command[command.index("--engram-config") + 1]), expected)
+            self.assertEqual(command[command.index("--shm-size") + 1], shm)
+            self.assertEqual(plan["engram_dp_shared"], "dp_shared_memory" in expected)
+        with_lmcache = self.plan("--engram-dp-shared", "--lmcache-mp")
+        self.assertIn("--ipc=host", with_lmcache["command"])
+        self.assertNotIn("--shm-size", with_lmcache["command"])
+        with self.assertRaisesRegex(ValueError, "requires TP4"):
+            self.plan("--engram-dp-shared", "--parallel", "tp8")
 
     def test_new_hotpaths_are_opt_in_and_independently_recorded(self):
         baseline = self.plan()
@@ -305,6 +357,18 @@ class StreamingMetricTests(unittest.TestCase):
         self.assertEqual(result["chunks"], 2)
         self.assertEqual(result["cached_tokens"], 0)
         self.assertAlmostEqual(result["tpot_s"], result["decode_span_s"] / 9)
+
+    def test_token_id_counts_as_completion_output_without_visible_text(self):
+        stream = io.BytesIO(
+            b'data: {"choices":[{"text":"","prompt_token_ids":[1,2],"token_ids":[]}] }\n'
+            b'data: {"choices":[{"text":"","token_ids":[190],"finish_reason":"length"}]}\n'
+            b'data: {"choices":[],"usage":{"completion_tokens":1,"prompt_tokens":2,'
+            b'"prompt_tokens_details":{"cached_tokens":0}}}\n'
+            b'data: [DONE]\n'
+        )
+        result = stream_metrics(stream, 0, False, expected_output=1, clock=iter([3, 4]).__next__)
+        self.assertEqual((result["output_tokens"], result["chunks"], result["output_chars"]), (1, 1, 0))
+        self.assertEqual(result["ttft_s"], 3)
 
     def test_missing_done_and_usage_cannot_pass(self):
         stream = io.BytesIO(

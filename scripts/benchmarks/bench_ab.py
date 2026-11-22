@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import argparse
 import random
+import uuid
 from pathlib import Path
 from typing import Any
 
 from scripts.bench_common import (
-    DEFAULT_BASE_URL,
+    DEFAULT_PERFORMANCE_BASE_URL,
     chat_body,
     completion_body,
     launch_args,
@@ -81,6 +82,10 @@ def _burst_reports(base, workload, variant, timeout):
             bodies = [chat_body(workload["prompt"], workload["osl"]) for _ in prompts]
         else:
             raise ValueError(f"unsupported burst kind: {kind}")
+        if workload.get("cache") == "cold":
+            namespace = uuid.uuid4().hex
+            for index, body in enumerate(bodies):
+                body["cache_salt"] = f"ab-{namespace}-{index}"
         rows, elapsed = run_burst(
             base, bodies, concurrency, timeout, expected_output=workload["osl"]
         )
@@ -148,7 +153,7 @@ def measure(base: str, case: dict[str, Any], variant: dict[str, Any], timeout: f
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--base-url", default=DEFAULT_PERFORMANCE_BASE_URL)
     parser.add_argument("--plan", action="store_true", help="print how to start each variant")
     parser.add_argument("--case")
     parser.add_argument("--variant")

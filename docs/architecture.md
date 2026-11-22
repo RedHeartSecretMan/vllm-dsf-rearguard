@@ -26,6 +26,7 @@
 - 多轮请求重放相同媒体时 wrapper 身份保持稳定，并写入 vLLM 视频 content-part 的 `uuid` 以复用多模态 encoder/prefix cache；缺少原始媒体或服务端视觉/KV 缓存时，单独发送身份文本仍不能恢复视频。
 - 对缓存命中、重复图片、精确图片起点、prefix-cache 尾部和极端长宽比增加调度与几何保护。
 - 同步和异步 renderer 共享同一排序逻辑；官方 5 组输入文件的 40 种思考模式与 `reasoning_effort` 组合均与官方编码器逐字一致。
+- Responses 历史由单个 API worker 保存在进程内存中。启用 `--responses-store` 后，响应、消息和流式事件状态按 LRU 上限管理：后台流结束时清理事件队列，显式删除或超出上限淘汰时同步释放关联状态；`previous_response_id` 仅在当前服务进程内有效，服务重启后历史清空。
 
 ## 关键实现
 

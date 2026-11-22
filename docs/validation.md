@@ -59,6 +59,39 @@ wikitext-2 test 每组使用相同的 134 个窗口和 272,802 个计分 token�
 | 4 | 90.40% |
 | 平均 | **91.54%** |
 
+### DeepSWE v1.1
+
+在 `8×A100-SXM4-80GB` 部署服务上完成 113 个任务的 8 轮独立评测，共 904 个 trial。通过 658 个 trial，出现 8 个错误；raw intention-to-treat Pass@1 为 **72.79%**（`658 / 904`），complete-case Pass@1 为 **73.44%**（`658 / 896`）。按任务聚类的 bootstrap 95% 置信区间为 **67.04%–78.32%**。
+
+| 口径 | Pass@1 | 说明 |
+|---|---:|---|
+| Raw intention-to-treat | **72.79%** | 8 个错误 trial 计为失败 |
+| Complete-case | **73.44%** | 排除 8 个错误 trial |
+
+| 轮次 | 通过 | 错误 | Raw Pass@1 |
+|---|---:|---:|---:|
+| 1 | 83 | 2 | 73.45% |
+| 2 | 80 | 1 | 70.80% |
+| 3 | 79 | 0 | 69.91% |
+| 4 | 76 | 0 | 67.26% |
+| 5 | 84 | 1 | 74.34% |
+| 6 | 85 | 1 | 75.22% |
+| 7 | 86 | 3 | 76.11% |
+| 8 | 85 | 0 | 75.22% |
+
+8 个错误由 3 个 verifier timeout、4 个 agent timeout 和 1 个 Docker Compose runtime error 组成。评测使用 DeepSWE `0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea`、Pier `0c802fc067a425345b24d1c69411aa98acf61a1d`、mini-swe-agent `2.4.6` 和 mcp `2.3.0`；采样参数为 `temperature=1.0`、`top_p=0.95`、`reasoning_effort=max`，上下文上限 1,048,576 token，agent step limit 为 500。任务并发 32，verifier timeout 使用任务原始的 1,800 秒。
+
+| 来源 | 分数 | 口径 |
+|---|---:|---|
+| DeepSeek 官方公布 | 77.0 | 厂商报告，mini-swe-v2 |
+| 腾讯 HY4 页面自测 | 73.8 | mini-swe-agent，任务沙箱 8 核 / 16 GB |
+| 本部署 raw intention-to-treat | **72.79** | mini-swe-agent 2.4.6，错误计为失败 |
+| 本部署 complete-case | **73.44** | 排除错误 trial，不作官方分数 |
+
+[DeepSeek 发布说明](https://api-docs.deepseek.com/news/news261017/)明确其 DeepSWE v1.1 结果使用 mini-swe-v2；[腾讯 HY4 评测页](https://hy.tencent.ai/research/hy4)将模型仓库公开的 mini-swe-agent 路径用于自测，并把该模型列为 73.8。两者的 harness、任务沙箱资源和错误处理并不完全相同，因此这些数字不构成严格同口径排名。本地 raw 点估计接近腾讯自测值，95% 置信区间同时覆盖 77.0。
+
+机器可读汇总和逐任务聚合结果见 [deepswe-v1.1.json](evidence/deepswe-v1.1.json) 与 [deepswe-v1.1-tasks.tsv](evidence/deepswe-v1.1-tasks.tsv)。
+
 ## 持续负载
 
 30 分钟闭环测试采用 1M 上下文、`TP4 / DP2 / EP8`、DSpark k5、16K chunk 和 `0.90` 显存水位；请求为 ISL 1,024 / OSL 1,000，并发 64。每完成一个请求就补发一个，保持 64 个请求在途，最终 **7,940/7,940** 个请求成功完成。吞吐与延迟见[性能与调优](performance.md#长输入与混合负载)。
@@ -70,7 +103,7 @@ wikitext-2 test 每组使用相同的 134 个窗口和 272,802 个计分 token�
 | 模型来源 | 固定 ModelScope revision；83 个模型文件（含 48 个权重分片）的大小与 SHA256 校验通过 |
 | 适配层安装 | 45 个适配文件与清单哈希一致，原子安装及容器内源码复核通过 |
 | 本地代码回归 | Python 3.10 运行 349 项，8 项跳过 |
-| 构建环境代码回归 | 运行 363 项，5 项跳过 |
+| 构建环境代码回归 | 运行 366 项，5 项跳过 |
 | CPU 热路径 | 34 个用例通过，覆盖 decode 元数据、ragged 复用、空 ragged pack 和 context 投影；结果见 [hotpaths-cpu.json](evidence/hotpaths-cpu.json) |
 | 镜像构建 | 固定 digest 构建、运行时校验和原生 MXFP8 loader 检查通过 |
 

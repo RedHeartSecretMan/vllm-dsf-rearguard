@@ -16,6 +16,7 @@ from vllm.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
 )
+from vllm.distributed.parallel_state import GroupCoordinator
 from vllm.forward_context import get_forward_context, is_forward_context_available
 from vllm.logger import init_logger
 from vllm.model_executor.kernels.mhc.tilelang import (
@@ -74,7 +75,13 @@ from vllm.utils.math_utils import cdiv
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 from vllm.v1.worker.ubatching import dbo_current_ubatch_id
 
-from ..common.engram import Engram, EngramLayout, NgramHashState
+from ..common.engram import (
+    Engram,
+    EngramLayout,
+    NgramHashState,
+    load_shared_engram_weights,
+    prepare_engram_sharing,
+)
 from ..common.mm_preprocess import IMAGE_SENTINEL_BASE_ID, image_sentinel_mask
 
 if typing.TYPE_CHECKING:
@@ -183,6 +190,7 @@ class DeepseekV4DecoderLayer(nn.Module):
         aux_stream_list: list[torch.cuda.Stream] | None = None,
         candidate_block_buffer: torch.Tensor | None = None,
         engram_layout: EngramLayout | None = None,
+        engram_shared_group: GroupCoordinator | None = None,
     ):
         super().__init__()
 
@@ -201,6 +209,7 @@ class DeepseekV4DecoderLayer(nn.Module):
                     engram_layout.layer_ids.index(layer_id),
                     use_sequence_parallel=self.use_sequence_parallel,
                     prefix=f"{prefix}.engram",
+                    shared_group=engram_shared_group,
                 )
 
         self.rms_norm_eps = config.rms_norm_eps
@@ -461,6 +470,11 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             self.embed_tokens = PPMissingLayer()
 
         self.engram_layout = EngramLayout.from_config(config)
+        engram_shared_group = (
+            prepare_engram_sharing(vllm_config, self.engram_layout)
+            if self.engram_layout is not None
+            else None
+        )
 
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
@@ -471,6 +485,7 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
                 aux_stream_list=aux_stream_list,
                 candidate_block_buffer=self.candidate_block_buffer,
                 engram_layout=self.engram_layout,
+                engram_shared_group=engram_shared_group,
             ),
             prefix=f"{prefix}.layers",
         )
@@ -502,8 +517,12 @@ class DeepseekV4Model(nn.Module, EagleModelMixin):
             self.norm = PPMissingLayer()
 
         spec_config = vllm_config.speculative_config
-        needs_mtp_hidden_states = spec_config is not None and (
-            spec_config.use_eagle() or spec_config.uses_draft_model()
+        # DSpark uses the target layers' auxiliary states, leaving the
+        # pre-collapse residual buffer for the modes that consume it.
+        needs_mtp_hidden_states = (
+            spec_config is not None
+            and (spec_config.use_eagle() or spec_config.uses_draft_model())
+            and not spec_config.use_dspark()
         )
         if get_pp_group().is_last_rank and needs_mtp_hidden_states:
             self._mtp_hidden_buffer = torch.empty(
@@ -1117,8 +1136,17 @@ class DeepseekV41LLMForCausalLM(
         return getattr(self.model, "_mtp_hidden_buffer", None)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        loader = AutoWeightsLoader(self)
-        loaded_params = loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+        def load() -> set[str]:
+            loader = AutoWeightsLoader(self)
+            return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
+
+        shared_stores = [
+            (name, storage)
+            for name, module in self.model.named_modules()
+            if isinstance(module, Engram)
+            if (storage := module.embed_tokens.shared_storage) is not None
+        ]
+        loaded_params = load_shared_engram_weights(shared_stores, load)
         self.process_weights_after_loading()
         return loaded_params
 
